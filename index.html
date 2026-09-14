@@ -32,6 +32,7 @@
     <nav class="view-switch">
       <button class="view-switch__btn is-active" data-view="schedule">Расписание</button>
       <button class="view-switch__btn" data-view="homework">Домашние задания <span id="hwCount" class="count-badge hidden">0</span></button>
+      <button class="view-switch__btn" data-view="recordings">Записи <span id="recCount" class="count-badge hidden">0</span></button>
     </nav>
 
     <section id="nowBanner" class="now-banner hidden"></section>
@@ -48,6 +49,14 @@
         <p class="empty-state__hint">Откройте пару в расписании и добавьте задание — оно появится здесь.</p>
       </div>
       <div id="homeworkList" class="homework-list"></div>
+    </main>
+
+    <main id="recordingsView" class="view hidden">
+      <div id="recordingsEmpty" class="empty-state hidden">
+        <p>Пока нет аудиозаписей.</p>
+        <p class="empty-state__hint">Откройте пару в расписании и нажмите «🎙 Записать пару» — запись появится здесь.</p>
+      </div>
+      <div id="recordingsListView" class="recordings-list-view"></div>
     </main>
   </div>
 

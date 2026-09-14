@@ -147,6 +147,7 @@
       }
       const listEl = document.querySelector(`.recordings-list[data-lesson-id="${id}"]`);
       if (listEl) refreshRecordingsList(id, listEl);
+      updateRecCountBadge();
     });
     activeRecording = { id, recorder, chunks, startedAt: Date.now(), stream };
     recorder.start();
@@ -189,7 +190,7 @@
     actions.className = "recording-item__actions";
 
     const dl = document.createElement("a");
-    dl.className = "recording-item__btn";
+    dl.className = "recording-item__btn recording-item__btn--primary";
     dl.textContent = "⬇️ Скачать";
     dl.href = url;
     dl.download = `запись-${rec.lessonId}-${rec.recId}.${extFromMime(rec.blob.type)}`;
@@ -204,6 +205,7 @@
       await deleteRecording(rec.recId);
       URL.revokeObjectURL(url);
       wrap.remove();
+      updateRecCountBadge();
     });
     actions.appendChild(del);
 
@@ -217,6 +219,133 @@
     recs
       .sort((a, b) => b.createdAt - a.createdAt)
       .forEach((rec) => listEl.appendChild(renderRecordingItem(rec)));
+  }
+
+  async function getAllRecordings() {
+    const items = [];
+    for (const [dayIdx, day] of SCHEDULE.days.entries()) {
+      for (const pair of Object.keys(day.pairs).map(Number)) {
+        for (const [sIdx, section] of day.pairs[pair].entries()) {
+          const id = lessonId(dayIdx, pair, sIdx);
+          const recs = await getRecordings(id);
+          recs.forEach((rec) => items.push({ rec, dayIdx, pair, sIdx, section }));
+        }
+      }
+    }
+    return items;
+  }
+
+  async function updateRecCountBadge() {
+    const items = await getAllRecordings();
+    const badge = document.getElementById("recCount");
+    if (items.length > 0) {
+      badge.textContent = items.length;
+      badge.classList.remove("hidden");
+    } else {
+      badge.classList.add("hidden");
+    }
+  }
+
+  function buildRecordingCard(item) {
+    const { rec, dayIdx, pair, section } = item;
+    const card = document.createElement("article");
+    card.className = "homework-card recording-card";
+
+    const body = document.createElement("div");
+    body.className = "homework-card__body";
+
+    const meta = document.createElement("div");
+    meta.className = "homework-card__meta";
+    meta.textContent = `${SCHEDULE.days[dayIdx].name} · пара ${pair} · ${SCHEDULE.times[pair - 1]}`;
+    body.appendChild(meta);
+
+    const subject = document.createElement("div");
+    subject.className = "homework-card__subject";
+    subject.textContent = sectionLabel(section);
+    body.appendChild(subject);
+
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    const url = URL.createObjectURL(rec.blob);
+    audio.src = url;
+    audio.className = "recording-card__audio";
+    body.appendChild(audio);
+
+    const info = document.createElement("div");
+    info.className = "recording-item__meta";
+    info.textContent = `${formatDateTime(rec.createdAt)} · ${formatDuration(rec.durationSec)}`;
+    body.appendChild(info);
+
+    const actions = document.createElement("div");
+    actions.className = "recording-item__actions";
+
+    const dl = document.createElement("a");
+    dl.className = "recording-item__btn recording-item__btn--primary";
+    dl.textContent = "⬇️ Скачать";
+    dl.href = url;
+    dl.download = `запись-${SCHEDULE.days[dayIdx].name}-пара${pair}-${rec.recId}.${extFromMime(rec.blob.type)}`;
+    actions.appendChild(dl);
+
+    const goto = document.createElement("button");
+    goto.type = "button";
+    goto.className = "recording-item__btn";
+    goto.textContent = "Открыть в расписании →";
+    goto.addEventListener("click", () => goToLesson(dayIdx, pair));
+    actions.appendChild(goto);
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "recording-item__btn recording-item__btn--danger";
+    del.textContent = "🗑 Удалить";
+    del.addEventListener("click", async () => {
+      if (!confirm("Удалить эту запись без возможности восстановления?")) return;
+      await deleteRecording(rec.recId);
+      URL.revokeObjectURL(url);
+      card.remove();
+      updateRecCountBadge();
+      const listEl = document.querySelector(`.recordings-list[data-lesson-id="${lessonId(dayIdx, pair, item.sIdx)}"]`);
+      if (listEl) refreshRecordingsList(lessonId(dayIdx, pair, item.sIdx), listEl);
+      const remaining = document.querySelectorAll(".recording-card").length;
+      if (remaining === 0) document.getElementById("recordingsEmpty").classList.remove("hidden");
+    });
+    actions.appendChild(del);
+
+    body.appendChild(actions);
+    card.appendChild(body);
+    return card;
+  }
+
+  async function renderRecordingsListView() {
+    const list = document.getElementById("recordingsListView");
+    const empty = document.getElementById("recordingsEmpty");
+    const items = await getAllRecordings();
+    updateRecCountBadge();
+    list.innerHTML = "";
+    if (!items.length) {
+      empty.classList.remove("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+    items
+      .sort((a, b) => b.rec.createdAt - a.rec.createdAt)
+      .forEach((item) => list.appendChild(buildRecordingCard(item)));
+  }
+
+  function goToLesson(dayIdx, pair) {
+    document.querySelector('.view-switch__btn[data-view="schedule"]').click();
+    activeDayIndex = dayIdx;
+    renderDayTabs();
+    renderLessons(activeDayIndex);
+    requestAnimationFrame(() => {
+      const cards = lessonsList.querySelectorAll(".lesson-card");
+      const pairKeys = Object.keys(SCHEDULE.days[dayIdx].pairs).map(Number).sort((a, b) => a - b);
+      const target = Array.from(cards)[pairKeys.indexOf(pair)];
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.querySelector(".lesson-card__body").classList.remove("hidden");
+        target.classList.add("is-open");
+      }
+    });
   }
 
   // ---------- theme ----------
@@ -345,6 +474,7 @@
   // ---------- view switching ----------
   const scheduleView = document.getElementById("scheduleView");
   const homeworkView = document.getElementById("homeworkView");
+  const recordingsView = document.getElementById("recordingsView");
   const dayTabsEl = document.getElementById("dayTabs");
   document.querySelectorAll(".view-switch__btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -353,8 +483,10 @@
       const view = btn.dataset.view;
       scheduleView.classList.toggle("hidden", view !== "schedule");
       homeworkView.classList.toggle("hidden", view !== "homework");
+      recordingsView.classList.toggle("hidden", view !== "recordings");
       dayTabsEl.classList.toggle("hidden", view !== "schedule");
       if (view === "homework") renderHomeworkView();
+      if (view === "recordings") renderRecordingsListView();
     });
   });
 
@@ -714,22 +846,7 @@
       const goto = document.createElement("button");
       goto.className = "homework-card__goto";
       goto.textContent = "Открыть →";
-      goto.addEventListener("click", () => {
-        document.querySelector('.view-switch__btn[data-view="schedule"]').click();
-        activeDayIndex = it.dayIdx;
-        renderDayTabs();
-        renderLessons(activeDayIndex);
-        requestAnimationFrame(() => {
-          const cards = lessonsList.querySelectorAll(".lesson-card");
-          const target = Array.from(cards)[Object.keys(SCHEDULE.days[it.dayIdx].pairs).map(Number).sort((a, b) => a - b).indexOf(it.pair)];
-          if (target) {
-            target.scrollIntoView({ behavior: "smooth", block: "center" });
-            const body = target.querySelector(".lesson-card__body");
-            body.classList.remove("hidden");
-            target.classList.add("is-open");
-          }
-        });
-      });
+      goto.addEventListener("click", () => goToLesson(it.dayIdx, it.pair));
 
       card.appendChild(checkWrap);
       card.appendChild(body);
@@ -742,6 +859,7 @@
   renderDayTabs();
   renderLessons(activeDayIndex);
   renderHomeworkView();
+  updateRecCountBadge();
 
   setInterval(() => {
     renderNowBanner();
