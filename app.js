@@ -416,6 +416,42 @@
     return manualParity || autoParity();
   }
 
+  // ---------- занятия на конкретные даты ----------
+  // Для дня недели, который сейчас открыт (dayIdx), вычисляем реальный
+  // календарный день ЭТОЙ недели (той же, что взята за основу для чётности)
+  // и проверяем по нему activeDates/exceptDates/fromDate/toDate секции —
+  // так мы не показываем как «одновременные» занятия, которые на самом
+  // деле идут в разные недели/даты.
+  function calendarDateForDay(dayIdx) {
+    const monday = mondayOf(new Date());
+    const d = new Date(monday);
+    d.setDate(d.getDate() + dayIdx);
+    return d;
+  }
+  function ddmm(date) {
+    return `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}`;
+  }
+  function isSectionActiveOnDate(section, date) {
+    const cur = ddmm(date);
+    if (section.activeDates) return section.activeDates.includes(cur);
+    if (section.exceptDates && section.exceptDates.includes(cur)) return false;
+    if (section.fromDate || section.toDate) {
+      const year = date.getFullYear();
+      if (section.fromDate) {
+        const [fd, fm] = section.fromDate.split(".").map(Number);
+        if (date < new Date(year, fm - 1, fd)) return false;
+      }
+      if (section.toDate) {
+        const [td, tm] = section.toDate.split(".").map(Number);
+        if (date > new Date(year, tm - 1, td, 23, 59, 59)) return false;
+      }
+    }
+    return true;
+  }
+  function isSectionActiveForDay(dayIdx, section) {
+    return isSectionActiveOnDate(section, calendarDateForDay(dayIdx));
+  }
+
   const parityBtn = document.getElementById("parityBtn");
   function renderParityBtn() {
     const label = effectiveParity() === "odd" ? "Нечётная" : "Чётная";
@@ -634,7 +670,8 @@
     }
     const day = SCHEDULE.days[today];
     const rawPairKeys = Object.keys(day.pairs).map(Number).sort((a, b) => a - b);
-    const visibleFor = (p) => day.pairs[p].filter((_, i) => !isHidden(lessonId(today, p, i)));
+    const visibleFor = (p) =>
+      day.pairs[p].filter((s, i) => !isHidden(lessonId(today, p, i)) && isSectionActiveForDay(today, s));
     const pairKeys = rawPairKeys.filter((p) => visibleFor(p).length > 0);
     const now = nowMinutes();
     let current = null;
@@ -735,9 +772,12 @@
       const allSections = day.pairs[pair];
       const entriesToShow = allSections
         .map((section, i) => ({ section, i }))
-        .filter(({ i }) => showHiddenLessons || !isHidden(lessonId(dayIdx, pair, i)));
+        .filter(({ section, i }) => {
+          if (!isSectionActiveForDay(dayIdx, section)) return false; // в эту неделю этого занятия просто нет
+          return showHiddenLessons || !isHidden(lessonId(dayIdx, pair, i));
+        });
 
-      if (!entriesToShow.length) return; // вся пара скрыта и режим показа скрытых выключен
+      if (!entriesToShow.length) return; // вся пара скрыта, либо ни одно занятие не идёт на этой неделе
 
       renderedCount++;
       const visibleSections = entriesToShow.map((e) => e.section);
@@ -796,9 +836,14 @@
     });
 
     if (!renderedCount) {
+      const hasHiddenThisWeek = pairKeys.some((pair) =>
+        day.pairs[pair].some((section, i) => isSectionActiveForDay(dayIdx, section) && isHidden(lessonId(dayIdx, pair, i)))
+      );
       const empty = document.createElement("div");
       empty.className = "empty-state";
-      empty.innerHTML = "<p>Все пары в этот день скрыты.</p><p class=\"empty-state__hint\">Нажмите «Показать скрытые пары» выше, чтобы вернуть их.</p>";
+      empty.innerHTML = hasHiddenThisWeek
+        ? "<p>Все пары в этот день скрыты.</p><p class=\"empty-state__hint\">Нажмите «Показать скрытые пары» выше, чтобы вернуть их.</p>"
+        : "<p>На этой неделе в этот день пар нет.</p><p class=\"empty-state__hint\">Некоторые занятия идут только по определённым датам.</p>";
       lessonsList.appendChild(empty);
     }
 
