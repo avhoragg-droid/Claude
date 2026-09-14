@@ -409,6 +409,45 @@
   });
   renderParityBtn();
 
+  // ---------- PWA: установка на главный экран и офлайн-режим ----------
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    });
+  }
+
+  const isStandalone =
+    window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  const installBtn = document.getElementById("installBtn");
+  let deferredInstallPrompt = null;
+
+  if (!isStandalone) {
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      installBtn.classList.remove("hidden");
+    });
+    if (isIOS) installBtn.classList.remove("hidden");
+  }
+
+  installBtn.addEventListener("click", async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      installBtn.classList.add("hidden");
+    } else if (isIOS) {
+      alert(
+        "Чтобы добавить приложение на главный экран:\n\n1. Нажмите кнопку «Поделиться» внизу экрана Safari (значок ⬆️ в квадрате)\n2. Выберите «На экран «Домой»»\n3. Нажмите «Добавить»"
+      );
+    } else {
+      alert("Откройте меню браузера и выберите «Установить приложение» или «Добавить на главный экран».");
+    }
+    menuPanel.classList.add("hidden");
+  });
+
   // ---------- menu ----------
   const menuBtn = document.getElementById("menuBtn");
   const menuPanel = document.getElementById("menuPanel");
