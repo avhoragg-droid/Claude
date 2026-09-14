@@ -48,15 +48,45 @@
     applyTheme(theme);
   });
 
-  // ---------- parity ----------
-  let parity = localStorage.getItem(PARITY_KEY) || "odd";
+  // ---------- parity (чётность недели) ----------
+  // Неделя с 1 по 6 сентября 2026 (Вт–Сб) — нечётная. 1 сентября 2026 — вторник,
+  // поэтому опорный понедельник этой недели — 31 августа 2026. От него считаем все остальные.
+  const REFERENCE_ODD_MONDAY = new Date(2026, 7, 31); // понедельник недели, в которую входит 1 сентября 2026
+
+  function mondayOf(date) {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const day = d.getDay(); // 0=Вс..6=Сб
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    return d;
+  }
+
+  function autoParity(date) {
+    const monday = mondayOf(date || new Date());
+    const diffDays = Math.round((monday - REFERENCE_ODD_MONDAY) / 86400000);
+    const weekIndex = Math.floor(diffDays / 7);
+    const mod = ((weekIndex % 2) + 2) % 2; // защита от отрицательного остатка
+    return mod === 0 ? "odd" : "even";
+  }
+
+  // null/отсутствует = автоопределение; "odd"/"even" = ручной выбор пользователя
+  let manualParity = localStorage.getItem(PARITY_KEY) || null;
+  function effectiveParity() {
+    return manualParity || autoParity();
+  }
+
   const parityBtn = document.getElementById("parityBtn");
   function renderParityBtn() {
-    parityBtn.textContent = parity === "odd" ? "Неделя: Нечётная" : "Неделя: Чётная";
+    const label = effectiveParity() === "odd" ? "Нечётная" : "Чётная";
+    parityBtn.textContent = manualParity ? `Неделя: ${label}` : `Неделя: ${label} · авто`;
+    parityBtn.title = manualParity
+      ? "Задано вручную. Нажмите, чтобы вернуться к автоопределению"
+      : "Определено автоматически. Нажмите, чтобы задать вручную";
   }
   parityBtn.addEventListener("click", () => {
-    parity = parity === "odd" ? "even" : "odd";
-    localStorage.setItem(PARITY_KEY, parity);
+    manualParity = manualParity === null ? "odd" : manualParity === "odd" ? "even" : null;
+    if (manualParity === null) localStorage.removeItem(PARITY_KEY);
+    else localStorage.setItem(PARITY_KEY, manualParity);
     renderParityBtn();
     renderLessons(activeDayIndex);
   });
@@ -341,7 +371,7 @@
     if (section.parity) {
       parityEl.textContent = section.parity === "odd" ? "Нечётная неделя" : "Чётная неделя";
       parityEl.classList.remove("hidden");
-      if (section.parity !== parity) root.style.opacity = "0.55";
+      if (section.parity !== effectiveParity()) root.style.opacity = "0.55";
     }
 
     root.querySelector(".section__teacher").textContent = section.teacher || "";
@@ -507,5 +537,6 @@
 
   setInterval(() => {
     renderNowBanner();
+    if (!manualParity) renderParityBtn();
   }, 60 * 1000);
 })();
