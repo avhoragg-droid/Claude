@@ -205,6 +205,13 @@ body {
 
 .now-banner strong { font-size: 0.95rem; }
 
+.now-banner__countdown {
+  display: block;
+  margin-top: 2px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+
 .day-tabs {
   display: flex;
   gap: 8px;

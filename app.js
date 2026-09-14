@@ -546,6 +546,24 @@
     const d = new Date();
     return d.getHours() * 60 + d.getMinutes();
   }
+  function pluralRu(n, one, few, many) {
+    const mod100 = Math.abs(n) % 100;
+    const mod10 = mod100 % 10;
+    if (mod100 > 10 && mod100 < 20) return many;
+    if (mod10 > 1 && mod10 < 5) return few;
+    if (mod10 === 1) return one;
+    return many;
+  }
+  function formatCountdown(totalMinutes) {
+    const mins = Math.max(0, Math.round(totalMinutes));
+    if (mins < 1) return "меньше минуты";
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    const parts = [];
+    if (h > 0) parts.push(`${h} ${pluralRu(h, "час", "часа", "часов")}`);
+    if (m > 0 || h === 0) parts.push(`${m} ${pluralRu(m, "минута", "минуты", "минут")}`);
+    return parts.join(" ");
+  }
 
   // ---------- day tabs ----------
   let activeDayIndex = todayIndex() ?? 0;
@@ -604,13 +622,15 @@
       const [, end] = parseRange(SCHEDULE.times[current - 1]);
       const sections = day.pairs[current];
       const label = sections.map(sectionLabel).join(" / ");
-      banner.innerHTML = `Сейчас: <strong>${escapeHtml(label)}</strong> · до ${SCHEDULE.times[current - 1].split("–")[1]}`;
+      const endStr = SCHEDULE.times[current - 1].split("–")[1];
+      banner.innerHTML = `Сейчас ${current}-я пара: <strong>${escapeHtml(label)}</strong> · до ${endStr} <span class="now-banner__countdown">(ещё ${formatCountdown(end - now)})</span>`;
       banner.classList.remove("hidden");
     } else if (next) {
       const [start] = parseRange(SCHEDULE.times[next - 1]);
       const sections = day.pairs[next];
       const label = sections.map(sectionLabel).join(" / ");
-      banner.innerHTML = `Следующая пара: <strong>${escapeHtml(label)}</strong> · в ${SCHEDULE.times[next - 1].split("–")[0]}`;
+      const startStr = SCHEDULE.times[next - 1].split("–")[0];
+      banner.innerHTML = `Следующая пара — ${next}-я: <strong>${escapeHtml(label)}</strong> · в ${startStr} <span class="now-banner__countdown">(через ${formatCountdown(start - now)})</span>`;
       banner.classList.remove("hidden");
     } else if (pairKeys.length) {
       banner.textContent = "На сегодня пар больше нет 👍";
