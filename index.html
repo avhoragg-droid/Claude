@@ -19,6 +19,92 @@
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <svg hidden aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+    <defs>
+      <symbol id="icon-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17.8 3.3a2.4 2.4 0 0 1 3.4 3.4L8.5 19.4l-4.6 1.2 1.2-4.6Z"/>
+        <path d="M15.3 5.8l3.4 3.4"/>
+      </symbol>
+      <symbol id="icon-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6.5 3.5h8l5 5v10a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"/>
+        <path d="M14.5 3.5v5h5"/>
+        <path d="M8.5 13.5h7"/>
+        <path d="M8.5 17h4.5"/>
+      </symbol>
+      <symbol id="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="2.5" width="6" height="12" rx="3"/>
+        <path d="M5 11a7 7 0 0 0 14 0"/>
+        <path d="M12 18v3.5"/>
+        <path d="M8.5 21.5h7"/>
+      </symbol>
+      <symbol id="icon-stop" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+        <rect x="6" y="6" width="12" height="12" rx="2.5"/>
+      </symbol>
+      <symbol id="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v12.5"/>
+        <path d="M6.5 10.5L12 16l5.5-5.5"/>
+        <path d="M4.5 21h15"/>
+      </symbol>
+      <symbol id="icon-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 21V8.5"/>
+        <path d="M6.5 13.5L12 8l5.5 5.5"/>
+        <path d="M4.5 3h15"/>
+      </symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.5 7h15"/>
+        <path d="M10 11v6"/>
+        <path d="M14 11v6"/>
+        <path d="M6.5 7l1 12.5a2 2 0 0 0 2 1.8h5a2 2 0 0 0 2-1.8L17.5 7"/>
+        <path d="M9.5 7V4.3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V7"/>
+      </symbol>
+      <symbol id="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 12S5.5 5 12 5s10 7 10 7-3.5 7-10 7-10-7-10-7Z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </symbol>
+      <symbol id="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 3l18 18"/>
+        <path d="M10.6 5.2A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a13.4 13.4 0 0 1-3.1 3.9"/>
+        <path d="M6.6 6.7C3.8 8.5 2 12 2 12s3.5 7 10 7a9.6 9.6 0 0 0 4.4-1"/>
+        <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>
+      </symbol>
+      <symbol id="icon-ban" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M5.6 5.6l12.8 12.8"/>
+      </symbol>
+      <symbol id="icon-restore" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.5 12a8.5 8.5 0 1 0 2.8-6.3"/>
+        <path d="M3.2 4.5v5.3h5.3"/>
+      </symbol>
+      <symbol id="icon-theme" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <circle cx="12" cy="12" r="8.2"/>
+        <path d="M12 3.8a8.2 8.2 0 0 1 0 16.4Z" fill="currentColor" stroke="none"/>
+      </symbol>
+      <symbol id="icon-swap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 7.5h14.5"/>
+        <path d="M15 4l3.5 3.5L15 11"/>
+        <path d="M20 16.5H5.5"/>
+        <path d="M9 13l-3.5 3.5L9 20"/>
+      </symbol>
+      <symbol id="icon-install" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="7" y="2" width="10" height="20" rx="2.2"/>
+        <path d="M12 6v7"/>
+        <path d="M9 10.5l3 3 3-3"/>
+      </symbol>
+      <symbol id="icon-more" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+        <circle cx="5" cy="12" r="1.7"/>
+        <circle cx="12" cy="12" r="1.7"/>
+        <circle cx="19" cy="12" r="1.7"/>
+      </symbol>
+      <symbol id="icon-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M8 12.3l2.6 2.6L16.3 9.2"/>
+      </symbol>
+      <symbol id="icon-sparkle" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+        <path d="M12 2.5l1.9 6.6 6.6 1.9-6.6 1.9L12 19.5l-1.9-6.6-6.6-1.9 6.6-1.9Z"/>
+      </symbol>
+    </defs>
+  </svg>
+
   <div id="groupPicker" class="group-picker hidden">
     <div class="group-picker__card">
       <h2>Выберите группу</h2>
@@ -39,20 +125,20 @@
       </div>
       <div class="topbar__actions">
         <button id="parityBtn" class="chip-btn" title="Переключить чётность недели"></button>
-        <button id="themeBtn" class="icon-btn" title="Тема оформления">🌓</button>
-        <button id="menuBtn" class="icon-btn" title="Ещё">⋯</button>
+        <button id="themeBtn" class="icon-btn" title="Тема оформления"><svg class="icon"><use href="#icon-theme"/></svg></button>
+        <button id="menuBtn" class="icon-btn" title="Ещё"><svg class="icon"><use href="#icon-more"/></svg></button>
       </div>
     </header>
 
     <div id="menuPanel" class="menu-panel hidden">
-      <button id="switchGroupBtn">🔁 Сменить группу</button>
-      <button id="installBtn" class="hidden">📲 Установить на главный экран</button>
-      <button id="exportBtn">⬇️ Экспортировать данные</button>
+      <button id="switchGroupBtn"><svg class="icon"><use href="#icon-swap"/></svg> Сменить группу</button>
+      <button id="installBtn" class="hidden"><svg class="icon"><use href="#icon-install"/></svg> Установить на главный экран</button>
+      <button id="exportBtn"><svg class="icon"><use href="#icon-download"/></svg> Экспортировать данные</button>
       <label class="import-label">
-        ⬆️ Импортировать данные
+        <svg class="icon"><use href="#icon-upload"/></svg> Импортировать данные
         <input type="file" id="importInput" accept="application/json" hidden />
       </label>
-      <button id="clearBtn" class="danger">🗑 Очистить все заметки</button>
+      <button id="clearBtn" class="danger"><svg class="icon"><use href="#icon-trash"/></svg> Очистить все заметки</button>
     </div>
 
     <nav class="view-switch">
@@ -68,7 +154,7 @@
     <main id="scheduleView" class="view">
       <div id="hiddenToggleRow" class="hidden-toggle-row hidden">
         <button id="toggleHiddenBtn" class="link-toggle">
-          👁 Показать скрытые пары <span id="hiddenCount" class="count-badge hidden">0</span>
+          <svg class="icon"><use href="#icon-eye"/></svg> Показать скрытые пары <span id="hiddenCount" class="count-badge hidden">0</span>
         </button>
       </div>
       <div id="lessonsList" class="lessons-list"></div>
@@ -85,7 +171,7 @@
     <main id="recordingsView" class="view hidden">
       <div id="recordingsEmpty" class="empty-state hidden">
         <p>Пока нет аудиозаписей.</p>
-        <p class="empty-state__hint">Откройте пару в расписании и нажмите «🎙 Записать пару» — запись появится здесь.</p>
+        <p class="empty-state__hint">Откройте пару в расписании и нажмите «<svg class="icon icon--inline"><use href="#icon-mic"/></svg> Записать пару» — запись появится здесь.</p>
       </div>
       <div id="recordingsListView" class="recordings-list-view"></div>
     </main>
@@ -124,11 +210,11 @@
 
       <div class="section__editor">
         <label>
-          📝 Домашнее задание
+          <span class="field-label"><svg class="icon"><use href="#icon-pencil"/></svg> Домашнее задание</span>
           <textarea class="hw-input" rows="2" placeholder="Например: решить №5–10, стр. 42"></textarea>
         </label>
         <label>
-          🗒 Заметка
+          <span class="field-label"><svg class="icon"><use href="#icon-note"/></svg> Заметка</span>
           <textarea class="note-input" rows="2" placeholder="Личная заметка к паре"></textarea>
         </label>
         <div class="section__editor-footer">
@@ -142,7 +228,7 @@
 
       <div class="section__recording">
         <div class="record-row">
-          <button type="button" class="record-btn">🎙 Записать пару</button>
+          <button type="button" class="record-btn"><svg class="icon"><use href="#icon-mic"/></svg> Записать пару</button>
           <span class="record-timer hidden">00:00</span>
         </div>
         <p class="record-hint">Запись хранится только в этом браузере и никуда не отправляется.</p>
@@ -150,7 +236,7 @@
       </div>
 
       <div class="section__visibility">
-        <button type="button" class="hide-btn">🚫 Не хожу — скрыть эту пару</button>
+        <button type="button" class="hide-btn"><svg class="icon"><use href="#icon-ban"/></svg> Не хожу — скрыть эту пару</button>
         <p class="hide-hint">Пара пропадёт из расписания. Восстановить можно через «Показать скрытые пары».</p>
       </div>
     </div>

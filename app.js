@@ -1,6 +1,11 @@
 (function () {
   "use strict";
 
+  // Рисованные SVG-иконки вместо системных эмодзи (спрайт — в index.html).
+  function svgIcon(name, extraClass) {
+    return `<svg class="icon${extraClass ? " " + extraClass : ""}"><use href="#icon-${name}"/></svg>`;
+  }
+
   // ---------- выбор группы ----------
   const GROUP_KEY = "scheduleApp:v1:group";
   let currentGroup = GROUPS.find((g) => g.id === localStorage.getItem(GROUP_KEY));
@@ -199,7 +204,7 @@
       const id = btn.dataset.lessonId;
       const timerEl = btn.parentElement.querySelector(".record-timer");
       const isThis = activeRecording && activeRecording.id === id;
-      btn.textContent = isThis ? "⏹ Остановить" : "🎙 Записать пару";
+      btn.innerHTML = isThis ? svgIcon("stop") + " Остановить" : svgIcon("mic") + " Записать пару";
       btn.classList.toggle("is-recording", !!isThis);
       btn.disabled = !!activeRecording && !isThis;
       if (timerEl) timerEl.classList.toggle("hidden", !isThis);
@@ -283,7 +288,7 @@
 
     const dl = document.createElement("a");
     dl.className = "recording-item__btn recording-item__btn--primary";
-    dl.textContent = "⬇️ Скачать";
+    dl.innerHTML = svgIcon("download") + " Скачать";
     dl.href = url;
     dl.download = filename;
     actions.appendChild(dl);
@@ -300,7 +305,7 @@
     const del = document.createElement("button");
     del.type = "button";
     del.className = "recording-item__btn recording-item__btn--danger";
-    del.textContent = "🗑 Удалить";
+    del.innerHTML = svgIcon("trash") + " Удалить";
     del.addEventListener("click", async () => {
       if (!confirm("Удалить эту запись без возможности восстановления?")) return;
       await deleteRecording(rec.recId);
@@ -567,7 +572,7 @@
       installBtn.classList.add("hidden");
     } else if (isIOS) {
       alert(
-        "Чтобы добавить приложение на главный экран:\n\n1. Нажмите кнопку «Поделиться» внизу экрана Safari (значок ⬆️ в квадрате)\n2. Выберите «На экран «Домой»»\n3. Нажмите «Добавить»"
+        "Чтобы добавить приложение на главный экран:\n\n1. Нажмите кнопку «Поделиться» внизу экрана Safari (стрелка вверх в квадрате)\n2. Выберите «На экран «Домой»»\n3. Нажмите «Добавить»"
       );
     } else {
       alert("Откройте меню браузера и выберите «Установить приложение» или «Добавить на главный экран».");
@@ -742,7 +747,7 @@
     const banner = document.getElementById("nowBanner");
     const today = todayIndex();
     if (today === null) {
-      banner.textContent = "Сегодня выходной 🎉";
+      banner.innerHTML = svgIcon("sparkle") + " Сегодня выходной";
       banner.classList.remove("hidden");
       return;
     }
@@ -772,10 +777,10 @@
       banner.innerHTML = `Следующая пара — ${next}-я: <strong>${escapeHtml(label)}</strong> · в ${startStr} <span class="now-banner__countdown">(через ${formatCountdown(start - now)})</span>`;
       banner.classList.remove("hidden");
     } else if (pairKeys.length) {
-      banner.textContent = "На сегодня пар больше нет 👍";
+      banner.innerHTML = svgIcon("check-circle") + " На сегодня пар больше нет";
       banner.classList.remove("hidden");
     } else if (rawPairKeys.length) {
-      banner.textContent = "Сегодня все пары скрыты 🎉";
+      banner.innerHTML = svgIcon("sparkle") + " Сегодня все пары скрыты";
       banner.classList.remove("hidden");
     } else {
       banner.classList.add("hidden");
@@ -820,7 +825,8 @@
     hiddenToggleRow.classList.toggle("hidden", count === 0 && !showHiddenLessons);
     toggleHiddenBtn.classList.toggle("is-active", showHiddenLessons);
     const badge = count > 0 ? `<span class="count-badge">${count}</span>` : "";
-    toggleHiddenBtn.innerHTML = (showHiddenLessons ? "🙈 Скрыть скрытые пары " : "👁 Показать скрытые пары ") + badge;
+    toggleHiddenBtn.innerHTML =
+      (showHiddenLessons ? svgIcon("eye-off") + " Скрыть скрытые пары " : svgIcon("eye") + " Показать скрытые пары ") + badge;
   }
 
   toggleHiddenBtn.addEventListener("click", () => {
@@ -882,11 +888,11 @@
         return e.hw && e.hw.trim() && !e.done;
       });
       const hasNote = entriesToShow.some(({ i }) => getEntry(lessonId(dayIdx, pair, i)).note?.trim());
-      if (hasHw) badgesEl.appendChild(makeBadge("📝"));
-      if (hasNote) badgesEl.appendChild(makeBadge("🗒"));
+      if (hasHw) badgesEl.appendChild(makeBadge("pencil"));
+      if (hasNote) badgesEl.appendChild(makeBadge("note"));
       Promise.all(entriesToShow.map(({ i }) => getRecordings(lessonId(dayIdx, pair, i)))).then((lists) => {
         if (lists.some((l) => l.length) && !badgesEl.querySelector(".badge-dot--rec")) {
-          const b = makeBadge("🎙");
+          const b = makeBadge("mic");
           b.classList.add("badge-dot--rec");
           badgesEl.appendChild(b);
         }
@@ -930,10 +936,10 @@
     updateRecordButtonsUI();
   }
 
-  function makeBadge(icon) {
+  function makeBadge(iconName) {
     const span = document.createElement("span");
     span.className = "badge-dot";
-    span.textContent = icon;
+    span.innerHTML = svgIcon(iconName);
     return span;
   }
 
@@ -1021,10 +1027,10 @@
     const hideBtn = root.querySelector(".hide-btn");
     function renderHideBtn() {
       if (isHidden(id)) {
-        hideBtn.textContent = "♻️ Восстановить эту пару";
+        hideBtn.innerHTML = svgIcon("restore") + " Восстановить эту пару";
         hideBtn.classList.add("is-hidden");
       } else {
-        hideBtn.textContent = "🚫 Не хожу — скрыть эту пару";
+        hideBtn.innerHTML = svgIcon("ban") + " Не хожу — скрыть эту пару";
         hideBtn.classList.remove("is-hidden");
       }
     }
@@ -1116,7 +1122,7 @@
       if (it.entry.note && it.entry.note.trim()) {
         const note = document.createElement("div");
         note.className = "homework-card__note";
-        note.textContent = "🗒 " + it.entry.note;
+        note.innerHTML = svgIcon("note") + " " + escapeHtml(it.entry.note);
         body.appendChild(note);
       }
 
