@@ -10,6 +10,23 @@
   const groupPickerCancel = document.getElementById("groupPickerCancel");
   const appRoot = document.querySelector(".app");
 
+  // Стабильный цвет и инициалы группы — чтобы группы было проще различать
+  // с первого взгляда, без привязки к произвольным настройкам.
+  function groupHue(id) {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
+    return h;
+  }
+  function groupAvatarGradient(id) {
+    const hue = groupHue(id);
+    return `linear-gradient(135deg, hsl(${hue} 70% 55%), hsl(${(hue + 45) % 360} 70% 45%))`;
+  }
+  function groupInitials(name) {
+    const words = name.trim().split(/\s+/).filter(Boolean);
+    const letters = words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2);
+    return letters.toUpperCase();
+  }
+
   function renderGroupPickerList() {
     groupPickerList.innerHTML = "";
     GROUPS.forEach((g) => {
@@ -19,9 +36,12 @@
         ? `<div class="group-picker__item-direction">${escapeHtml(g.direction)}${g.profile ? " · " + escapeHtml(g.profile) : ""}</div>`
         : "";
       btn.innerHTML =
+        `<div class="group-picker__item-avatar" style="background:${groupAvatarGradient(g.id)}">${escapeHtml(groupInitials(g.group))}</div>` +
+        `<div class="group-picker__item-text">` +
         `<div class="group-picker__item-name">${escapeHtml(g.group)}</div>` +
         `<div class="group-picker__item-code">${escapeHtml(g.groupCode)}</div>` +
-        directionLine;
+        directionLine +
+        `</div>`;
       btn.addEventListener("click", () => {
         localStorage.setItem(GROUP_KEY, g.id);
         location.reload();
@@ -243,21 +263,21 @@
     if (timerEl) timerEl.textContent = formatDuration((Date.now() - activeRecording.startedAt) / 1000);
   }, 500);
 
-  function renderRecordingItem(rec) {
-    const wrap = document.createElement("div");
-    wrap.className = "recording-item";
-
+  // Общий "плеер" (audio + дата/длительность) для карточки записи —
+  // используется и в паре расписания, и во вкладке «Записи».
+  function buildRecordingPlayer(rec) {
     const audio = document.createElement("audio");
     audio.controls = true;
     const url = URL.createObjectURL(rec.blob);
     audio.src = url;
-    wrap.appendChild(audio);
-
     const meta = document.createElement("div");
     meta.className = "recording-item__meta";
     meta.textContent = `${formatDateTime(rec.createdAt)} · ${formatDuration(rec.durationSec)}`;
-    wrap.appendChild(meta);
+    return { audio, meta, url };
+  }
 
+  // Общий блок кнопок (Скачать [+ Открыть] + Удалить) для карточки записи.
+  function buildRecordingActions(rec, url, { filename, gotoHandler, onDelete }) {
     const actions = document.createElement("div");
     actions.className = "recording-item__actions";
 
@@ -265,8 +285,17 @@
     dl.className = "recording-item__btn recording-item__btn--primary";
     dl.textContent = "⬇️ Скачать";
     dl.href = url;
-    dl.download = `запись-${rec.lessonId}-${rec.recId}.${extFromMime(rec.blob.type)}`;
+    dl.download = filename;
     actions.appendChild(dl);
+
+    if (gotoHandler) {
+      const goto = document.createElement("button");
+      goto.type = "button";
+      goto.className = "recording-item__btn";
+      goto.textContent = "Открыть в расписании →";
+      goto.addEventListener("click", gotoHandler);
+      actions.appendChild(goto);
+    }
 
     const del = document.createElement("button");
     del.type = "button";
@@ -276,12 +305,28 @@
       if (!confirm("Удалить эту запись без возможности восстановления?")) return;
       await deleteRecording(rec.recId);
       URL.revokeObjectURL(url);
-      wrap.remove();
-      updateRecCountBadge();
+      await onDelete();
     });
     actions.appendChild(del);
 
-    wrap.appendChild(actions);
+    return actions;
+  }
+
+  function renderRecordingItem(rec) {
+    const wrap = document.createElement("div");
+    wrap.className = "recording-item";
+    const { audio, meta, url } = buildRecordingPlayer(rec);
+    wrap.appendChild(audio);
+    wrap.appendChild(meta);
+    wrap.appendChild(
+      buildRecordingActions(rec, url, {
+        filename: `запись-${rec.lessonId}-${rec.recId}.${extFromMime(rec.blob.type)}`,
+        onDelete: async () => {
+          wrap.remove();
+          updateRecCountBadge();
+        },
+      })
+    );
     return wrap;
   }
 
@@ -319,7 +364,7 @@
   }
 
   function buildRecordingCard(item) {
-    const { rec, dayIdx, pair, section } = item;
+    const { rec, dayIdx, pair, sIdx, section } = item;
     const card = document.createElement("article");
     card.className = "homework-card recording-card";
 
@@ -336,51 +381,25 @@
     subject.textContent = sectionLabel(section);
     body.appendChild(subject);
 
-    const audio = document.createElement("audio");
-    audio.controls = true;
-    const url = URL.createObjectURL(rec.blob);
-    audio.src = url;
+    const { audio, meta: info, url } = buildRecordingPlayer(rec);
     audio.className = "recording-card__audio";
     body.appendChild(audio);
-
-    const info = document.createElement("div");
-    info.className = "recording-item__meta";
-    info.textContent = `${formatDateTime(rec.createdAt)} · ${formatDuration(rec.durationSec)}`;
     body.appendChild(info);
 
-    const actions = document.createElement("div");
-    actions.className = "recording-item__actions";
-
-    const dl = document.createElement("a");
-    dl.className = "recording-item__btn recording-item__btn--primary";
-    dl.textContent = "⬇️ Скачать";
-    dl.href = url;
-    dl.download = `запись-${SCHEDULE.days[dayIdx].name}-пара${pair}-${rec.recId}.${extFromMime(rec.blob.type)}`;
-    actions.appendChild(dl);
-
-    const goto = document.createElement("button");
-    goto.type = "button";
-    goto.className = "recording-item__btn";
-    goto.textContent = "Открыть в расписании →";
-    goto.addEventListener("click", () => goToLesson(dayIdx, pair));
-    actions.appendChild(goto);
-
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "recording-item__btn recording-item__btn--danger";
-    del.textContent = "🗑 Удалить";
-    del.addEventListener("click", async () => {
-      if (!confirm("Удалить эту запись без возможности восстановления?")) return;
-      await deleteRecording(rec.recId);
-      URL.revokeObjectURL(url);
-      card.remove();
-      updateRecCountBadge();
-      const listEl = document.querySelector(`.recordings-list[data-lesson-id="${lessonId(dayIdx, pair, item.sIdx)}"]`);
-      if (listEl) refreshRecordingsList(lessonId(dayIdx, pair, item.sIdx), listEl);
-      const remaining = document.querySelectorAll(".recording-card").length;
-      if (remaining === 0) document.getElementById("recordingsEmpty").classList.remove("hidden");
+    const actions = buildRecordingActions(rec, url, {
+      filename: `запись-${SCHEDULE.days[dayIdx].name}-пара${pair}-${rec.recId}.${extFromMime(rec.blob.type)}`,
+      gotoHandler: () => goToLesson(dayIdx, pair),
+      onDelete: async () => {
+        card.remove();
+        updateRecCountBadge();
+        const id = lessonId(dayIdx, pair, sIdx);
+        const listEl = document.querySelector(`.recordings-list[data-lesson-id="${id}"]`);
+        if (listEl) refreshRecordingsList(id, listEl);
+        if (!document.querySelectorAll(".recording-card").length) {
+          document.getElementById("recordingsEmpty").classList.remove("hidden");
+        }
+      },
     });
-    actions.appendChild(del);
 
     body.appendChild(actions);
     card.appendChild(body);
@@ -624,6 +643,9 @@
   const groupLabelEl = document.getElementById("groupLabel");
   groupLabelEl.textContent = `${SCHEDULE.group} · ${SCHEDULE.groupCode}`;
   if (SCHEDULE.direction) groupLabelEl.title = SCHEDULE.direction + (SCHEDULE.profile ? " · " + SCHEDULE.profile : "");
+  const groupAvatarEl = document.getElementById("groupAvatar");
+  groupAvatarEl.textContent = groupInitials(SCHEDULE.group);
+  groupAvatarEl.style.background = groupAvatarGradient(SCHEDULE.id);
 
   // ---------- view switching ----------
   const scheduleView = document.getElementById("scheduleView");
