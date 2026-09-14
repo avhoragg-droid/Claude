@@ -53,6 +53,11 @@
     <nav id="dayTabs" class="day-tabs"></nav>
 
     <main id="scheduleView" class="view">
+      <div id="hiddenToggleRow" class="hidden-toggle-row hidden">
+        <button id="toggleHiddenBtn" class="link-toggle">
+          👁 Показать скрытые пары <span id="hiddenCount" class="count-badge hidden">0</span>
+        </button>
+      </div>
       <div id="lessonsList" class="lessons-list"></div>
     </main>
 
@@ -98,6 +103,7 @@
         <span class="type-badge"></span>
         <span class="section__subject"></span>
         <span class="section__parity hidden"></span>
+        <span class="section__hidden-pill hidden">Скрыто</span>
       </div>
       <div class="section__teacher"></div>
       <div class="section__room"></div>
@@ -128,6 +134,11 @@
         </div>
         <p class="record-hint">Запись хранится только в этом браузере и никуда не отправляется.</p>
         <div class="recordings-list"></div>
+      </div>
+
+      <div class="section__visibility">
+        <button type="button" class="hide-btn">🚫 Не хожу — скрыть эту пару</button>
+        <p class="hide-hint">Пара пропадёт из расписания. Восстановить можно через «Показать скрытые пары».</p>
       </div>
     </div>
   </template>

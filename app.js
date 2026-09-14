@@ -4,6 +4,7 @@
   const STORAGE_KEY = "scheduleApp:v1:entries";
   const THEME_KEY = "scheduleApp:v1:theme";
   const PARITY_KEY = "scheduleApp:v1:parity";
+  const HIDDEN_KEY = "scheduleApp:v1:hidden";
 
   const DAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
@@ -30,6 +31,29 @@
     entries[id] = Object.assign({}, current, patch, { updatedAt: Date.now() });
     saveEntries();
   }
+
+  // ---------- hidden lessons (не хожу / показать снова) ----------
+  function loadHidden() {
+    try {
+      const arr = JSON.parse(localStorage.getItem(HIDDEN_KEY));
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch (e) {
+      return new Set();
+    }
+  }
+  let hiddenLessons = loadHidden();
+  function saveHidden() {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify(Array.from(hiddenLessons)));
+  }
+  function isHidden(id) {
+    return hiddenLessons.has(id);
+  }
+  function setHidden(id, hide) {
+    if (hide) hiddenLessons.add(id);
+    else hiddenLessons.delete(id);
+    saveHidden();
+  }
+  let showHiddenLessons = false;
 
   // ---------- audio recordings (IndexedDB) ----------
   const DB_NAME = "scheduleAppDB";
@@ -571,7 +595,7 @@
   function dayHasPendingHomework(dayIdx) {
     return Object.keys(entries).some((id) => {
       const [d] = id.split("-").map(Number);
-      return d === dayIdx && entries[id].hw && entries[id].hw.trim() && !entries[id].done;
+      return d === dayIdx && !isHidden(id) && entries[id].hw && entries[id].hw.trim() && !entries[id].done;
     });
   }
 
@@ -609,7 +633,9 @@
       return;
     }
     const day = SCHEDULE.days[today];
-    const pairKeys = Object.keys(day.pairs).map(Number).sort((a, b) => a - b);
+    const rawPairKeys = Object.keys(day.pairs).map(Number).sort((a, b) => a - b);
+    const visibleFor = (p) => day.pairs[p].filter((_, i) => !isHidden(lessonId(today, p, i)));
+    const pairKeys = rawPairKeys.filter((p) => visibleFor(p).length > 0);
     const now = nowMinutes();
     let current = null;
     let next = null;
@@ -620,20 +646,21 @@
     }
     if (current) {
       const [, end] = parseRange(SCHEDULE.times[current - 1]);
-      const sections = day.pairs[current];
-      const label = sections.map(sectionLabel).join(" / ");
+      const label = visibleFor(current).map(sectionLabel).join(" / ");
       const endStr = SCHEDULE.times[current - 1].split("–")[1];
       banner.innerHTML = `Сейчас ${current}-я пара: <strong>${escapeHtml(label)}</strong> · до ${endStr} <span class="now-banner__countdown">(ещё ${formatCountdown(end - now)})</span>`;
       banner.classList.remove("hidden");
     } else if (next) {
       const [start] = parseRange(SCHEDULE.times[next - 1]);
-      const sections = day.pairs[next];
-      const label = sections.map(sectionLabel).join(" / ");
+      const label = visibleFor(next).map(sectionLabel).join(" / ");
       const startStr = SCHEDULE.times[next - 1].split("–")[0];
       banner.innerHTML = `Следующая пара — ${next}-я: <strong>${escapeHtml(label)}</strong> · в ${startStr} <span class="now-banner__countdown">(через ${formatCountdown(start - now)})</span>`;
       banner.classList.remove("hidden");
     } else if (pairKeys.length) {
       banner.textContent = "На сегодня пар больше нет 👍";
+      banner.classList.remove("hidden");
+    } else if (rawPairKeys.length) {
+      banner.textContent = "Сегодня все пары скрыты 🎉";
       banner.classList.remove("hidden");
     } else {
       banner.classList.add("hidden");
@@ -658,6 +685,34 @@
   const lessonCardTpl = document.getElementById("lessonCardTemplate");
   const sectionTpl = document.getElementById("sectionTemplate");
 
+  function countHiddenTotal() {
+    let count = 0;
+    SCHEDULE.days.forEach((day, dayIdx) => {
+      Object.keys(day.pairs).map(Number).forEach((pair) => {
+        day.pairs[pair].forEach((_, i) => {
+          if (isHidden(lessonId(dayIdx, pair, i))) count++;
+        });
+      });
+    });
+    return count;
+  }
+
+  const hiddenToggleRow = document.getElementById("hiddenToggleRow");
+  const toggleHiddenBtn = document.getElementById("toggleHiddenBtn");
+
+  function updateHiddenCountUI() {
+    const count = countHiddenTotal();
+    hiddenToggleRow.classList.toggle("hidden", count === 0 && !showHiddenLessons);
+    toggleHiddenBtn.classList.toggle("is-active", showHiddenLessons);
+    const badge = count > 0 ? `<span class="count-badge">${count}</span>` : "";
+    toggleHiddenBtn.innerHTML = (showHiddenLessons ? "🙈 Скрыть скрытые пары " : "👁 Показать скрытые пары ") + badge;
+  }
+
+  toggleHiddenBtn.addEventListener("click", () => {
+    showHiddenLessons = !showHiddenLessons;
+    renderLessons(activeDayIndex);
+  });
+
   function renderLessons(dayIdx) {
     lessonsList.innerHTML = "";
     const day = SCHEDULE.days[dayIdx];
@@ -674,9 +729,18 @@
 
     const today = todayIndex();
     const now = nowMinutes();
+    let renderedCount = 0;
 
     pairKeys.forEach((pair) => {
-      const sections = day.pairs[pair];
+      const allSections = day.pairs[pair];
+      const entriesToShow = allSections
+        .map((section, i) => ({ section, i }))
+        .filter(({ i }) => showHiddenLessons || !isHidden(lessonId(dayIdx, pair, i)));
+
+      if (!entriesToShow.length) return; // вся пара скрыта и режим показа скрытых выключен
+
+      renderedCount++;
+      const visibleSections = entriesToShow.map((e) => e.section);
       const node = lessonCardTpl.content.cloneNode(true);
       const card = node.querySelector(".lesson-card");
       card.querySelector(".pair-num").textContent = pair;
@@ -685,24 +749,24 @@
       const subjEl = card.querySelector(".lesson-card__subjects");
       const first = document.createElement("div");
       first.className = "subj-line";
-      first.textContent = sectionLabel(sections[0]);
+      first.textContent = sectionLabel(visibleSections[0]);
       subjEl.appendChild(first);
-      if (sections.length > 1) {
+      if (visibleSections.length > 1) {
         const sub = document.createElement("div");
         sub.className = "subj-sub";
-        sub.textContent = "+ " + sections.slice(1).map(sectionLabel).join(", ");
+        sub.textContent = "+ " + visibleSections.slice(1).map(sectionLabel).join(", ");
         subjEl.appendChild(sub);
       }
 
       const badgesEl = card.querySelector(".lesson-card__badges");
-      const hasHw = sections.some((_, i) => {
+      const hasHw = entriesToShow.some(({ i }) => {
         const e = getEntry(lessonId(dayIdx, pair, i));
         return e.hw && e.hw.trim() && !e.done;
       });
-      const hasNote = sections.some((_, i) => getEntry(lessonId(dayIdx, pair, i)).note?.trim());
+      const hasNote = entriesToShow.some(({ i }) => getEntry(lessonId(dayIdx, pair, i)).note?.trim());
       if (hasHw) badgesEl.appendChild(makeBadge("📝"));
       if (hasNote) badgesEl.appendChild(makeBadge("🗒"));
-      Promise.all(sections.map((_, i) => getRecordings(lessonId(dayIdx, pair, i)))).then((lists) => {
+      Promise.all(entriesToShow.map(({ i }) => getRecordings(lessonId(dayIdx, pair, i)))).then((lists) => {
         if (lists.some((l) => l.length) && !badgesEl.querySelector(".badge-dot--rec")) {
           const b = makeBadge("🎙");
           b.classList.add("badge-dot--rec");
@@ -716,8 +780,8 @@
       }
 
       const sectionsWrap = card.querySelector(".sections");
-      sections.forEach((section, sIdx) => {
-        sectionsWrap.appendChild(buildSectionNode(dayIdx, pair, sIdx, section));
+      entriesToShow.forEach(({ section, i }) => {
+        sectionsWrap.appendChild(buildSectionNode(dayIdx, pair, i, section));
       });
 
       const head = card.querySelector(".lesson-card__head");
@@ -731,6 +795,14 @@
       lessonsList.appendChild(node);
     });
 
+    if (!renderedCount) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.innerHTML = "<p>Все пары в этот день скрыты.</p><p class=\"empty-state__hint\">Нажмите «Показать скрытые пары» выше, чтобы вернуть их.</p>";
+      lessonsList.appendChild(empty);
+    }
+
+    updateHiddenCountUI();
     renderNowBanner();
     updateRecordButtonsUI();
   }
@@ -753,6 +825,12 @@
     typeBadge.classList.add(TYPE_CLASS[section.type] || "practice");
 
     root.querySelector(".section__subject").textContent = sectionLabel(section);
+
+    const hiddenPill = root.querySelector(".section__hidden-pill");
+    if (isHidden(id)) {
+      root.classList.add("is-hidden-lesson");
+      hiddenPill.classList.remove("hidden");
+    }
 
     const parityEl = root.querySelector(".section__parity");
     if (section.parity) {
@@ -817,6 +895,23 @@
     });
     refreshRecordingsList(id, recordingsListEl);
 
+    const hideBtn = root.querySelector(".hide-btn");
+    function renderHideBtn() {
+      if (isHidden(id)) {
+        hideBtn.textContent = "♻️ Восстановить эту пару";
+        hideBtn.classList.add("is-hidden");
+      } else {
+        hideBtn.textContent = "🚫 Не хожу — скрыть эту пару";
+        hideBtn.classList.remove("is-hidden");
+      }
+    }
+    renderHideBtn();
+    hideBtn.addEventListener("click", () => {
+      setHidden(id, !isHidden(id));
+      renderDayTabs();
+      renderLessons(activeDayIndex);
+    });
+
     return node;
   }
 
@@ -833,7 +928,7 @@
         day.pairs[pair].forEach((section, sIdx) => {
           const id = lessonId(dayIdx, pair, sIdx);
           const entry = getEntry(id);
-          if (entry.hw && entry.hw.trim()) {
+          if (entry.hw && entry.hw.trim() && !isHidden(id)) {
             items.push({ id, dayIdx, pair, sIdx, section, entry });
           }
         });
