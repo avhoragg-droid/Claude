@@ -31,6 +31,194 @@
     saveEntries();
   }
 
+  // ---------- audio recordings (IndexedDB) ----------
+  const DB_NAME = "scheduleAppDB";
+  const DB_STORE = "recordings";
+  let dbPromise = null;
+  function openRecordingsDB() {
+    if (!dbPromise) {
+      dbPromise = new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(DB_STORE)) {
+            const store = db.createObjectStore(DB_STORE, { keyPath: "recId", autoIncrement: true });
+            store.createIndex("lessonId", "lessonId", { unique: false });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    return dbPromise;
+  }
+  async function addRecording(lessonIdVal, blob, durationSec) {
+    const db = await openRecordingsDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      const req = tx.objectStore(DB_STORE).add({ lessonId: lessonIdVal, blob, durationSec, createdAt: Date.now() });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function getRecordings(lessonIdVal) {
+    const db = await openRecordingsDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readonly");
+      const req = tx.objectStore(DB_STORE).index("lessonId").getAll(lessonIdVal);
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function deleteRecording(recId) {
+    const db = await openRecordingsDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      tx.objectStore(DB_STORE).delete(recId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  function formatDuration(totalSec) {
+    const m = Math.floor(totalSec / 60);
+    const s = Math.floor(totalSec % 60);
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+  function formatDateTime(ts) {
+    return new Date(ts).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+  function extFromMime(mime) {
+    if (!mime) return "webm";
+    if (mime.includes("mp4")) return "m4a";
+    if (mime.includes("ogg")) return "ogg";
+    return "webm";
+  }
+  function pickMimeType() {
+    if (!window.MediaRecorder) return "";
+    const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+    return candidates.find((c) => MediaRecorder.isTypeSupported(c)) || "";
+  }
+
+  let activeRecording = null; // { id, recorder, chunks, startedAt, stream }
+
+  function updateRecordButtonsUI() {
+    document.querySelectorAll(".record-btn").forEach((btn) => {
+      const id = btn.dataset.lessonId;
+      const timerEl = btn.parentElement.querySelector(".record-timer");
+      const isThis = activeRecording && activeRecording.id === id;
+      btn.textContent = isThis ? "⏹ Остановить" : "🎙 Записать пару";
+      btn.classList.toggle("is-recording", !!isThis);
+      btn.disabled = !!activeRecording && !isThis;
+      if (timerEl) timerEl.classList.toggle("hidden", !isThis);
+    });
+  }
+
+  async function startRecording(id) {
+    if (activeRecording) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("Этот браузер не поддерживает запись аудио.");
+      return;
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      alert("Не удалось получить доступ к микрофону: " + err.message);
+      return;
+    }
+    const mimeType = pickMimeType();
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    const chunks = [];
+    recorder.addEventListener("dataavailable", (e) => {
+      if (e.data && e.data.size) chunks.push(e.data);
+    });
+    recorder.addEventListener("stop", async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+      const durationSec = Math.round((Date.now() - activeRecording.startedAt) / 1000);
+      activeRecording = null;
+      updateRecordButtonsUI();
+      try {
+        await addRecording(id, blob, durationSec);
+      } catch (err) {
+        alert("Не удалось сохранить запись: " + err.message);
+        return;
+      }
+      const listEl = document.querySelector(`.recordings-list[data-lesson-id="${id}"]`);
+      if (listEl) refreshRecordingsList(id, listEl);
+    });
+    activeRecording = { id, recorder, chunks, startedAt: Date.now(), stream };
+    recorder.start();
+    updateRecordButtonsUI();
+  }
+
+  function stopRecording() {
+    if (activeRecording) activeRecording.recorder.stop();
+  }
+
+  window.addEventListener("beforeunload", (e) => {
+    if (activeRecording) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
+
+  setInterval(() => {
+    if (!activeRecording) return;
+    const timerEl = document.querySelector(`.record-timer[data-lesson-id="${activeRecording.id}"]`);
+    if (timerEl) timerEl.textContent = formatDuration((Date.now() - activeRecording.startedAt) / 1000);
+  }, 500);
+
+  function renderRecordingItem(rec) {
+    const wrap = document.createElement("div");
+    wrap.className = "recording-item";
+
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    const url = URL.createObjectURL(rec.blob);
+    audio.src = url;
+    wrap.appendChild(audio);
+
+    const meta = document.createElement("div");
+    meta.className = "recording-item__meta";
+    meta.textContent = `${formatDateTime(rec.createdAt)} · ${formatDuration(rec.durationSec)}`;
+    wrap.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "recording-item__actions";
+
+    const dl = document.createElement("a");
+    dl.className = "recording-item__btn";
+    dl.textContent = "⬇️ Скачать";
+    dl.href = url;
+    dl.download = `запись-${rec.lessonId}-${rec.recId}.${extFromMime(rec.blob.type)}`;
+    actions.appendChild(dl);
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "recording-item__btn recording-item__btn--danger";
+    del.textContent = "🗑 Удалить";
+    del.addEventListener("click", async () => {
+      if (!confirm("Удалить эту запись без возможности восстановления?")) return;
+      await deleteRecording(rec.recId);
+      URL.revokeObjectURL(url);
+      wrap.remove();
+    });
+    actions.appendChild(del);
+
+    wrap.appendChild(actions);
+    return wrap;
+  }
+
+  async function refreshRecordingsList(id, listEl) {
+    const recs = await getRecordings(id);
+    listEl.innerHTML = "";
+    recs
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .forEach((rec) => listEl.appendChild(renderRecordingItem(rec)));
+  }
+
   // ---------- theme ----------
   function applyTheme(theme) {
     if (theme === "light" || theme === "dark") {
@@ -323,6 +511,13 @@
       const hasNote = sections.some((_, i) => getEntry(lessonId(dayIdx, pair, i)).note?.trim());
       if (hasHw) badgesEl.appendChild(makeBadge("📝"));
       if (hasNote) badgesEl.appendChild(makeBadge("🗒"));
+      Promise.all(sections.map((_, i) => getRecordings(lessonId(dayIdx, pair, i)))).then((lists) => {
+        if (lists.some((l) => l.length) && !badgesEl.querySelector(".badge-dot--rec")) {
+          const b = makeBadge("🎙");
+          b.classList.add("badge-dot--rec");
+          badgesEl.appendChild(b);
+        }
+      });
 
       if (dayIdx === today) {
         const [start, end] = parseRange(SCHEDULE.times[pair - 1]);
@@ -346,6 +541,7 @@
     });
 
     renderNowBanner();
+    updateRecordButtonsUI();
   }
 
   function makeBadge(icon) {
@@ -417,6 +613,18 @@
       flashSaved();
       renderDayTabs();
     });
+
+    const recordBtn = root.querySelector(".record-btn");
+    const recordTimer = root.querySelector(".record-timer");
+    const recordingsListEl = root.querySelector(".recordings-list");
+    recordBtn.dataset.lessonId = id;
+    recordTimer.dataset.lessonId = id;
+    recordingsListEl.dataset.lessonId = id;
+    recordBtn.addEventListener("click", () => {
+      if (activeRecording && activeRecording.id === id) stopRecording();
+      else if (!activeRecording) startRecording(id);
+    });
+    refreshRecordingsList(id, recordingsListEl);
 
     return node;
   }
