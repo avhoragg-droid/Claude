@@ -14,5 +14,21 @@
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
     { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Домашние задания",
+      "short_name": "ДЗ",
+      "description": "Сразу открыть список домашних заданий",
+      "url": "./index.html?view=homework",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Записи",
+      "short_name": "Записи",
+      "description": "Сразу открыть аудиозаписи пар",
+      "url": "./index.html?view=recordings",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
   ]
 }

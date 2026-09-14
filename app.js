@@ -32,6 +32,24 @@
     return letters.toUpperCase();
   }
 
+  // Стабильный цвет предмета по названию — для быстрой визуальной ориентации в списках.
+  function subjectHue(name) {
+    let h = 0;
+    const s = name || "";
+    for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) % 360;
+    return h;
+  }
+  function subjectColor(name) {
+    return `hsl(${subjectHue(name)} 65% 52%)`;
+  }
+  function subjectDot(name) {
+    const span = document.createElement("span");
+    span.className = "subject-dot";
+    span.style.background = subjectColor(name);
+    span.title = name;
+    return span;
+  }
+
   function renderGroupPickerList() {
     groupPickerList.innerHTML = "";
     GROUPS.forEach((g) => {
@@ -148,6 +166,23 @@
   function saveWeekOverrides() {
     localStorage.setItem(WEEK_OVERRIDES_KEY, JSON.stringify(weekOverrides));
   }
+  // Разовые изменения нужны только пока актуальна их неделя — чистим то, что старше ~4 месяцев,
+  // чтобы localStorage не рос бесконечно от прошедших замен/переносов.
+  function pruneOldWeekOverrides() {
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 4);
+    let changed = false;
+    Object.keys(weekOverrides).forEach((key) => {
+      const datePart = key.slice(key.indexOf(":") + 1);
+      const monday = new Date(datePart + "T00:00:00");
+      if (!isNaN(monday) && monday < cutoff) {
+        delete weekOverrides[key];
+        changed = true;
+      }
+    });
+    if (changed) saveWeekOverrides();
+  }
+  pruneOldWeekOverrides();
   function isoDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   }
@@ -482,7 +517,8 @@
 
     const subject = document.createElement("div");
     subject.className = "homework-card__subject";
-    subject.textContent = sectionLabel(section);
+    subject.appendChild(subjectDot(section.subject));
+    subject.appendChild(document.createTextNode(sectionLabel(section)));
     body.appendChild(subject);
 
     const { audio, meta: info, url } = buildRecordingPlayer(rec);
@@ -696,14 +732,45 @@
     showGroupPicker(true);
   });
 
-  document.getElementById("exportBtn").addEventListener("click", () => {
-    const payload = {
+  // Общий формат резервной копии — используется файловым экспортом/импортом и QR-переносом.
+  function buildBackupPayload() {
+    return {
       format: "scheduleApp-backup-v2",
       exportedAt: new Date().toISOString(),
       entries,
       hiddenLessons: Array.from(hiddenLessons),
       weekOverrides,
     };
+  }
+  // Возвращает true при успехе; бросает исключение с понятным текстом при ошибке разбора.
+  function importBackupPayload(imported) {
+    if (imported && imported.format === "scheduleApp-backup-v2") {
+      entries = Object.assign({}, entries, imported.entries || {});
+      (imported.hiddenLessons || []).forEach((id) => hiddenLessons.add(id));
+      const incomingWeeks = imported.weekOverrides || {};
+      Object.keys(incomingWeeks).forEach((key) => {
+        const incoming = incomingWeeks[key];
+        const existing = getWeekEntry(key);
+        const cancelledSet = new Set([...(existing.cancelled || []), ...(incoming.cancelled || [])]);
+        const extraById = new Map();
+        [...(existing.extra || []), ...(incoming.extra || [])].forEach((ex) => extraById.set(ex.id, ex));
+        weekOverrides[key] = { cancelled: Array.from(cancelledSet), extra: Array.from(extraById.values()) };
+      });
+    } else if (imported && typeof imported === "object") {
+      entries = Object.assign({}, entries, imported); // старый формат экспорта (только заметки)
+    } else {
+      throw new Error("неизвестный формат данных");
+    }
+    saveEntries();
+    saveHidden();
+    saveWeekOverrides();
+    renderLessons(activeDayIndex);
+    renderDayTabs();
+    renderHomeworkView();
+  }
+
+  document.getElementById("exportBtn").addEventListener("click", () => {
+    const payload = buildBackupPayload();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -722,28 +789,7 @@
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const imported = JSON.parse(reader.result);
-        if (imported && imported.format === "scheduleApp-backup-v2") {
-          entries = Object.assign({}, entries, imported.entries || {});
-          (imported.hiddenLessons || []).forEach((id) => hiddenLessons.add(id));
-          const incomingWeeks = imported.weekOverrides || {};
-          Object.keys(incomingWeeks).forEach((key) => {
-            const incoming = incomingWeeks[key];
-            const existing = getWeekEntry(key);
-            const cancelledSet = new Set([...(existing.cancelled || []), ...(incoming.cancelled || [])]);
-            const extraById = new Map();
-            [...(existing.extra || []), ...(incoming.extra || [])].forEach((ex) => extraById.set(ex.id, ex));
-            weekOverrides[key] = { cancelled: Array.from(cancelledSet), extra: Array.from(extraById.values()) };
-          });
-        } else {
-          entries = Object.assign({}, entries, imported); // старый формат экспорта (только заметки)
-        }
-        saveEntries();
-        saveHidden();
-        saveWeekOverrides();
-        renderLessons(activeDayIndex);
-        renderDayTabs();
-        renderHomeworkView();
+        importBackupPayload(JSON.parse(reader.result));
         alert("Данные импортированы.");
       } catch (err) {
         alert("Не удалось прочитать файл: " + err.message);
@@ -763,6 +809,191 @@
       renderHomeworkView();
     }
     menuPanel.classList.add("hidden");
+  });
+
+  // ---------- экспорт дедлайнов в календарь (.ics) ----------
+  function icsEscape(str) {
+    return String(str || "")
+      .replace(/\\/g, "\\\\")
+      .replace(/;/g, "\\;")
+      .replace(/,/g, "\\,")
+      .replace(/\n/g, "\\n");
+  }
+  // Строки ICS не должны превышать 75 октетов — сворачиваем длинные переносом с пробелом.
+  function foldIcsLine(line) {
+    if (line.length <= 74) return line;
+    let result = line.slice(0, 74);
+    let rest = line.slice(74);
+    while (rest.length) {
+      result += "\r\n " + rest.slice(0, 73);
+      rest = rest.slice(73);
+    }
+    return result;
+  }
+  function buildIcsCalendar() {
+    const items = collectHomeworkItems().filter((it) => it.entry.dueDate);
+    const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//ScheduleApp//RU", "CALSCALE:GREGORIAN"];
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+    items.forEach((it) => {
+      const dateStr = it.entry.dueDate.replace(/-/g, "");
+      const summary = `Сдать: ${sectionLabel(it.section)}`;
+      const descParts = [it.entry.hw];
+      if (it.entry.topic) descParts.unshift(`Тема: ${it.entry.topic}`);
+      lines.push("BEGIN:VEVENT");
+      lines.push(`UID:${it.id}-${dateStr}@schedule-app`);
+      lines.push(`DTSTAMP:${stamp}`);
+      lines.push(`DTSTART;VALUE=DATE:${dateStr}`);
+      lines.push(`DTEND;VALUE=DATE:${dateStr}`);
+      lines.push(foldIcsLine(`SUMMARY:${icsEscape(summary)}`));
+      lines.push(foldIcsLine(`DESCRIPTION:${icsEscape(descParts.join("\\n"))}`));
+      lines.push("BEGIN:VALARM");
+      lines.push("ACTION:DISPLAY");
+      lines.push("DESCRIPTION:Напоминание о сроке сдачи");
+      lines.push("TRIGGER:-P1D");
+      lines.push("END:VALARM");
+      lines.push("END:VEVENT");
+    });
+    lines.push("END:VCALENDAR");
+    return lines.join("\r\n");
+  }
+  document.getElementById("icsExportBtn").addEventListener("click", () => {
+    const items = collectHomeworkItems().filter((it) => it.entry.dueDate);
+    if (!items.length) {
+      alert("Нет домашних заданий со сроком сдачи — добавьте дату «Сдать до» хотя бы у одного задания.");
+      menuPanel.classList.add("hidden");
+      return;
+    }
+    const blob = new Blob([buildIcsCalendar()], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `deadlines-${isoDate(new Date())}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    menuPanel.classList.add("hidden");
+  });
+
+  // ---------- статистика ----------
+  const statsModal = document.getElementById("statsModal");
+  document.getElementById("statsCloseBtn").addEventListener("click", () => statsModal.classList.add("hidden"));
+  statsModal.addEventListener("click", (e) => {
+    if (e.target === statsModal) statsModal.classList.add("hidden");
+  });
+  function statRow(label, value, tone) {
+    return `<div class="stats-row${tone ? " is-" + tone : ""}"><span>${escapeHtml(label)}</span><span class="stats-row__value">${escapeHtml(String(value))}</span></div>`;
+  }
+  async function renderStats() {
+    const body = document.getElementById("statsBody");
+    const hwItems = collectHomeworkItems();
+    const done = hwItems.filter((it) => it.entry.done).length;
+    const overdue = hwItems.filter((it) => !it.entry.done && dueDateUrgency(it.entry.dueDate) === "overdue").length;
+    const soon = hwItems.filter((it) => !it.entry.done && dueDateUrgency(it.entry.dueDate) === "soon").length;
+    const pending = hwItems.length - done;
+    const hiddenCount = countHiddenTotal();
+    const extrasCount = allExtrasForGroup().length;
+    const recCount = (await getAllRecordings()).length;
+    body.innerHTML =
+      statRow("Всего домашних заданий", hwItems.length) +
+      statRow("Выполнено", done, "ok") +
+      statRow("Осталось сделать", pending) +
+      statRow("Просрочено", overdue, overdue ? "danger" : undefined) +
+      statRow("Горит (сегодня/завтра)", soon, soon ? "warning" : undefined) +
+      statRow("Скрытых/отменённых на неделю пар", hiddenCount) +
+      statRow("Добавлено внеплановых пар (всего)", extrasCount) +
+      statRow("Аудиозаписей", recCount);
+  }
+  document.getElementById("statsBtn").addEventListener("click", () => {
+    menuPanel.classList.add("hidden");
+    statsModal.classList.remove("hidden");
+    renderStats();
+  });
+
+  // ---------- QR-перенос данных между устройствами ----------
+  const qrShowModal = document.getElementById("qrShowModal");
+  const qrShowBody = document.getElementById("qrShowBody");
+  document.getElementById("qrShowCloseBtn").addEventListener("click", () => qrShowModal.classList.add("hidden"));
+  qrShowModal.addEventListener("click", (e) => {
+    if (e.target === qrShowModal) qrShowModal.classList.add("hidden");
+  });
+  document.getElementById("qrShowBtn").addEventListener("click", () => {
+    menuPanel.classList.add("hidden");
+    qrShowBody.innerHTML = "";
+    const json = JSON.stringify(buildBackupPayload());
+    try {
+      if (typeof qrcode !== "function") throw new Error("QR-библиотека не загрузилась");
+      const qr = qrcode(0, "L");
+      qr.addData(json, "Byte");
+      qr.make();
+      qrShowBody.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 4 });
+    } catch (err) {
+      qrShowBody.innerHTML =
+        `<p class="qr-show-body__warning">Слишком много данных для одного QR-кода (${json.length} байт) — воспользуйтесь файловым экспортом («Экспорт») вместо QR.</p>`;
+    }
+    qrShowModal.classList.remove("hidden");
+  });
+
+  const qrScanModal = document.getElementById("qrScanModal");
+  const qrScanVideo = document.getElementById("qrScanVideo");
+  const qrScanStatus = document.getElementById("qrScanStatus");
+  let qrScanStream = null;
+  let qrScanRAF = null;
+  function stopQrScan() {
+    if (qrScanRAF) cancelAnimationFrame(qrScanRAF);
+    qrScanRAF = null;
+    if (qrScanStream) qrScanStream.getTracks().forEach((t) => t.stop());
+    qrScanStream = null;
+    qrScanModal.classList.add("hidden");
+  }
+  document.getElementById("qrScanCloseBtn").addEventListener("click", stopQrScan);
+  qrScanModal.addEventListener("click", (e) => {
+    if (e.target === qrScanModal) stopQrScan();
+  });
+  function qrScanTick() {
+    if (!qrScanStream) return;
+    const canvas = qrScanTick.canvas || (qrScanTick.canvas = document.createElement("canvas"));
+    if (qrScanVideo.readyState === qrScanVideo.HAVE_ENOUGH_DATA) {
+      canvas.width = qrScanVideo.videoWidth;
+      canvas.height = qrScanVideo.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(qrScanVideo, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = typeof jsQR === "function" ? jsQR(imageData.data, imageData.width, imageData.height) : null;
+      if (code && code.data) {
+        try {
+          importBackupPayload(JSON.parse(code.data));
+          qrScanStatus.textContent = "Готово — данные импортированы.";
+          stopQrScan();
+          alert("Данные импортированы.");
+          return;
+        } catch (err) {
+          qrScanStatus.textContent = "Найден QR-код, но не удалось прочитать данные: " + err.message;
+        }
+      }
+    }
+    qrScanRAF = requestAnimationFrame(qrScanTick);
+  }
+  document.getElementById("qrScanBtn").addEventListener("click", async () => {
+    menuPanel.classList.add("hidden");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("Этот браузер не поддерживает доступ к камере.");
+      return;
+    }
+    if (typeof jsQR !== "function") {
+      alert("Библиотека сканирования QR не загрузилась.");
+      return;
+    }
+    qrScanStatus.textContent = "Наведите камеру на QR-код…";
+    qrScanModal.classList.remove("hidden");
+    try {
+      qrScanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      qrScanVideo.srcObject = qrScanStream;
+      await qrScanVideo.play();
+      qrScanRAF = requestAnimationFrame(qrScanTick);
+    } catch (err) {
+      qrScanStatus.textContent = "Не удалось получить доступ к камере: " + err.message;
+    }
   });
 
   // ---------- header ----------
@@ -791,6 +1022,14 @@
       if (view === "recordings") renderRecordingsListView();
     });
   });
+
+  // Ярлыки на главном экране (manifest "shortcuts") открывают сразу нужную вкладку.
+  (function openViewFromQuery() {
+    const requestedView = new URLSearchParams(location.search).get("view");
+    if (requestedView !== "homework" && requestedView !== "recordings") return;
+    const btn = document.querySelector(`.view-switch__btn[data-view="${requestedView}"]`);
+    if (btn) btn.click();
+  })();
 
   // ---------- time helpers ----------
   function timeToMinutes(hhmm) {
@@ -1055,7 +1294,11 @@
       const subjEl = card.querySelector(".lesson-card__subjects");
       const first = document.createElement("div");
       first.className = "subj-line";
-      first.textContent = sectionLabel(visibleSections[0]);
+      first.appendChild(subjectDot(visibleSections[0].subject));
+      const firstText = document.createElement("span");
+      firstText.className = "subj-line__text";
+      firstText.textContent = sectionLabel(visibleSections[0]);
+      first.appendChild(firstText);
       subjEl.appendChild(first);
       if (visibleSections.length > 1) {
         const sub = document.createElement("div");
@@ -1349,15 +1592,31 @@
     return items;
   }
 
+  let hwSearchQuery = "";
+  function matchesHwSearch(it, query) {
+    const haystack = [
+      sectionLabel(it.section),
+      it.entry.topic,
+      it.entry.hw,
+      it.entry.note,
+      it.entry.materials,
+    ]
+      .filter(Boolean)
+      .join(" \n ")
+      .toLowerCase();
+    return haystack.includes(query);
+  }
+
   function renderHomeworkView() {
     const list = document.getElementById("homeworkList");
     const empty = document.getElementById("homeworkEmpty");
+    const searchEmpty = document.getElementById("homeworkSearchEmpty");
     const countBadge = document.getElementById("hwCount");
     list.innerHTML = "";
 
-    const items = collectHomeworkItems();
+    const allItems = collectHomeworkItems();
 
-    const pendingCount = items.filter((it) => !it.entry.done).length;
+    const pendingCount = allItems.filter((it) => !it.entry.done).length;
     if (pendingCount > 0) {
       countBadge.textContent = pendingCount;
       countBadge.classList.remove("hidden");
@@ -1365,11 +1624,21 @@
       countBadge.classList.add("hidden");
     }
 
-    if (!items.length) {
+    if (!allItems.length) {
       empty.classList.remove("hidden");
+      searchEmpty.classList.add("hidden");
       return;
     }
     empty.classList.add("hidden");
+
+    const query = hwSearchQuery.trim().toLowerCase();
+    const items = query ? allItems.filter((it) => matchesHwSearch(it, query)) : allItems;
+
+    if (!items.length) {
+      searchEmpty.classList.remove("hidden");
+      return;
+    }
+    searchEmpty.classList.add("hidden");
 
     items.sort((a, b) => {
       if (a.entry.done !== b.entry.done) return a.entry.done ? 1 : -1;
@@ -1413,7 +1682,8 @@
 
       const subject = document.createElement("div");
       subject.className = "homework-card__subject";
-      subject.textContent = sectionLabel(it.section);
+      subject.appendChild(subjectDot(it.section.subject));
+      subject.appendChild(document.createTextNode(sectionLabel(it.section)));
       body.appendChild(subject);
 
       if (it.entry.topic && it.entry.topic.trim()) {
@@ -1455,6 +1725,16 @@
       list.appendChild(card);
     });
   }
+
+  const hwSearchInput = document.getElementById("hwSearch");
+  let hwSearchDebounce = null;
+  hwSearchInput.addEventListener("input", () => {
+    clearTimeout(hwSearchDebounce);
+    hwSearchDebounce = setTimeout(() => {
+      hwSearchQuery = hwSearchInput.value;
+      renderHomeworkView();
+    }, 150);
+  });
 
   // ---------- deadline banner + notifications ----------
   const NOTIFY_PREF_KEY = "scheduleApp:v1:notifyDeadlines";
@@ -1550,6 +1830,65 @@
     if (changed) saveNotified(notified);
   }
 
+  // ---------- уведомление «пара скоро начнётся» ----------
+  const NOTIFIED_LESSON_KEY = "scheduleApp:v1:notifiedLessonStarts";
+  function loadNotifiedLessons() {
+    try {
+      return JSON.parse(localStorage.getItem(NOTIFIED_LESSON_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  }
+  function saveNotifiedLessons(obj) {
+    localStorage.setItem(NOTIFIED_LESSON_KEY, JSON.stringify(obj));
+  }
+  function checkAndNotifyUpcomingLesson() {
+    if (!notifyPrefEnabled()) return;
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    if (!("serviceWorker" in navigator)) return;
+    const today = todayIndex();
+    if (today === null) return;
+
+    const todayKey = isoDate(new Date());
+    const notified = loadNotifiedLessons();
+    let changed = false;
+    Object.keys(notified).forEach((k) => {
+      if (!k.startsWith(todayKey + ":")) {
+        delete notified[k];
+        changed = true;
+      }
+    });
+
+    const mergedPairs = mergedPairsForDay(today);
+    const now = nowMinutes();
+    Object.keys(mergedPairs).map(Number).forEach((pair) => {
+      mergedPairs[pair].forEach((section, i) => {
+        const id = idForSection(today, pair, i, section);
+        if (!section.__extraId) {
+          if (!isSectionActiveForDay(today, section)) return;
+          if (isHidden(id) || isCancelledThisWeek(id)) return;
+        }
+        const [start] = parseRange(SCHEDULE.times[pair - 1]);
+        const minutesToStart = start - now;
+        // Окно 3–6 минут (а не ровно 5) — чтобы не зависеть от точного момента минутного тика.
+        if (minutesToStart < 3 || minutesToStart > 6) return;
+        const key = `${todayKey}:${id}`;
+        if (notified[key]) return;
+        notified[key] = true;
+        changed = true;
+        navigator.serviceWorker.ready.then((reg) => {
+          reg.showNotification("Пара скоро начнётся", {
+            body: `${pair}-я пара: ${sectionLabel(section)} — через ${minutesToStart} мин (${SCHEDULE.times[pair - 1]})`,
+            icon: "icons/icon-192.png",
+            badge: "icons/icon-192.png",
+            tag: key,
+          });
+        });
+      });
+    });
+    if (changed) saveNotifiedLessons(notified);
+  }
+
   const notifyToggleBtn = document.getElementById("notifyToggleBtn");
   if (notifyToggleBtn) {
     notifyToggleBtn.addEventListener("click", () => {
@@ -1563,6 +1902,7 @@
             localStorage.setItem(NOTIFY_PREF_KEY, "1");
             renderNotifyToggleBtn();
             checkAndNotifyDeadlines();
+            checkAndNotifyUpcomingLesson();
           } else if (perm === "denied") {
             alert("Уведомления заблокированы в настройках браузера — разрешите их для этого сайта, чтобы включить.");
           }
@@ -1582,11 +1922,13 @@
   renderDeadlineBanner();
   renderNotifyToggleBtn();
   checkAndNotifyDeadlines();
+  checkAndNotifyUpcomingLesson();
 
   setInterval(() => {
     renderNowBanner();
     if (!manualParity) renderParityBtn();
     renderDeadlineBanner();
     checkAndNotifyDeadlines();
+    checkAndNotifyUpcomingLesson();
   }, 60 * 1000);
 })();

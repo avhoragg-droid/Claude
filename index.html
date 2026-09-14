@@ -184,12 +184,49 @@
       <button id="switchGroupBtn"><svg class="icon"><use href="#icon-swap"/></svg> Сменить группу</button>
       <button id="installBtn" class="hidden"><svg class="icon"><use href="#icon-install"/></svg> Установить на главный экран</button>
       <button id="notifyToggleBtn"><svg class="icon"><use href="#icon-bell"/></svg> <span class="notify-toggle-label">Уведомления о дедлайнах</span></button>
+      <button id="statsBtn"><svg class="icon"><use href="#icon-sparkle"/></svg> Статистика</button>
+      <button id="icsExportBtn"><svg class="icon"><use href="#icon-calendar"/></svg> Дедлайны в календарь (.ics)</button>
+      <button id="qrShowBtn"><svg class="icon"><use href="#icon-download"/></svg> Показать QR-код (перенос данных)</button>
+      <button id="qrScanBtn"><svg class="icon"><use href="#icon-upload"/></svg> Сканировать QR-код (импорт)</button>
       <button id="exportBtn"><svg class="icon"><use href="#icon-download"/></svg> Экспорт (перенос на другое устройство)</button>
       <label class="import-label">
         <svg class="icon"><use href="#icon-upload"/></svg> Импорт (с другого устройства)
         <input type="file" id="importInput" accept="application/json" hidden />
       </label>
       <button id="clearBtn" class="danger"><svg class="icon"><use href="#icon-trash"/></svg> Очистить все заметки</button>
+    </div>
+
+    <div id="statsModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-card__head">
+          <h2>Статистика</h2>
+          <button type="button" id="statsCloseBtn" class="modal-close"><svg class="icon"><use href="#icon-x"/></svg></button>
+        </div>
+        <div id="statsBody" class="stats-body"></div>
+      </div>
+    </div>
+
+    <div id="qrShowModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-card__head">
+          <h2>QR-код для переноса</h2>
+          <button type="button" id="qrShowCloseBtn" class="modal-close"><svg class="icon"><use href="#icon-x"/></svg></button>
+        </div>
+        <p class="modal-hint">Отсканируйте камерой на другом устройстве через «Сканировать QR-код» в этом же меню.</p>
+        <div id="qrShowBody" class="qr-show-body"></div>
+      </div>
+    </div>
+
+    <div id="qrScanModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-card__head">
+          <h2>Скан QR-кода</h2>
+          <button type="button" id="qrScanCloseBtn" class="modal-close"><svg class="icon"><use href="#icon-x"/></svg></button>
+        </div>
+        <p class="modal-hint">Наведите камеру на QR-код, показанный на другом устройстве.</p>
+        <video id="qrScanVideo" class="qr-scan-video" playsinline muted></video>
+        <p id="qrScanStatus" class="qr-scan-status"></p>
+      </div>
     </div>
 
     <nav class="view-switch">
@@ -252,9 +289,16 @@
     </main>
 
     <main id="homeworkView" class="view hidden">
+      <div class="hw-search-row">
+        <input type="search" id="hwSearch" class="hw-search-input" placeholder="Поиск по предмету, теме, заданию, конспекту…" />
+      </div>
       <div id="homeworkEmpty" class="empty-state hidden">
         <p>Пока нет домашних заданий.</p>
         <p class="empty-state__hint">Откройте пару в расписании и добавьте задание — оно появится здесь.</p>
+      </div>
+      <div id="homeworkSearchEmpty" class="empty-state hidden">
+        <p>Ничего не найдено.</p>
+        <p class="empty-state__hint">Попробуйте другой запрос.</p>
       </div>
       <div id="homeworkList" class="homework-list"></div>
     </main>
@@ -357,6 +401,8 @@
   </template>
 
   <script src="schedule-data.js"></script>
+  <script src="vendor/qrcode.js"></script>
+  <script src="vendor/jsQR.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
