@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Моё расписание</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar__title">
+        <h1>Расписание</h1>
+        <p id="groupLabel" class="topbar__group"></p>
+      </div>
+      <div class="topbar__actions">
+        <button id="parityBtn" class="chip-btn" title="Переключить чётность недели"></button>
+        <button id="themeBtn" class="icon-btn" title="Тема оформления">🌓</button>
+        <button id="menuBtn" class="icon-btn" title="Ещё">⋯</button>
+      </div>
+    </header>
+
+    <div id="menuPanel" class="menu-panel hidden">
+      <button id="exportBtn">⬇️ Экспортировать данные</button>
+      <label class="import-label">
+        ⬆️ Импортировать данные
+        <input type="file" id="importInput" accept="application/json" hidden />
+      </label>
+      <button id="clearBtn" class="danger">🗑 Очистить все заметки</button>
+    </div>
+
+    <nav class="view-switch">
+      <button class="view-switch__btn is-active" data-view="schedule">Расписание</button>
+      <button class="view-switch__btn" data-view="homework">Домашние задания <span id="hwCount" class="count-badge hidden">0</span></button>
+    </nav>
+
+    <section id="nowBanner" class="now-banner hidden"></section>
+
+    <nav id="dayTabs" class="day-tabs"></nav>
+
+    <main id="scheduleView" class="view">
+      <div id="lessonsList" class="lessons-list"></div>
+    </main>
+
+    <main id="homeworkView" class="view hidden">
+      <div id="homeworkEmpty" class="empty-state hidden">
+        <p>Пока нет домашних заданий.</p>
+        <p class="empty-state__hint">Откройте пару в расписании и добавьте задание — оно появится здесь.</p>
+      </div>
+      <div id="homeworkList" class="homework-list"></div>
+    </main>
+  </div>
+
+  <template id="lessonCardTemplate">
+    <article class="lesson-card">
+      <button class="lesson-card__head">
+        <div class="lesson-card__time">
+          <span class="pair-num"></span>
+          <span class="pair-time"></span>
+        </div>
+        <div class="lesson-card__main">
+          <div class="lesson-card__subjects"></div>
+        </div>
+        <div class="lesson-card__badges"></div>
+        <span class="chevron">▾</span>
+      </button>
+      <div class="lesson-card__body hidden">
+        <div class="sections"></div>
+      </div>
+    </article>
+  </template>
+
+  <template id="sectionTemplate">
+    <div class="section">
+      <div class="section__meta">
+        <span class="type-badge"></span>
+        <span class="section__subject"></span>
+        <span class="section__parity hidden"></span>
+      </div>
+      <div class="section__teacher"></div>
+      <div class="section__room"></div>
+      <div class="section__note hidden"></div>
+
+      <div class="section__editor">
+        <label>
+          📝 Домашнее задание
+          <textarea class="hw-input" rows="2" placeholder="Например: решить №5–10, стр. 42"></textarea>
+        </label>
+        <label>
+          🗒 Заметка
+          <textarea class="note-input" rows="2" placeholder="Личная заметка к паре"></textarea>
+        </label>
+        <div class="section__editor-footer">
+          <label class="done-check">
+            <input type="checkbox" class="done-input" />
+            Выполнено
+          </label>
+          <span class="save-status"></span>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <script src="schedule-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
