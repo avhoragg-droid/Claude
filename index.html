@@ -110,6 +110,35 @@
       <symbol id="icon-sparkle" viewBox="0 0 24 24" fill="currentColor" stroke="none">
         <path d="M12 2.5l1.9 6.6 6.6 1.9-6.6 1.9L12 19.5l-1.9-6.6-6.6-1.9 6.6-1.9Z"/>
       </symbol>
+      <symbol id="icon-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11.5 3H5.5a2 2 0 0 0-2 2v6l9.5 9.5a2 2 0 0 0 2.8 0l6.2-6.2a2 2 0 0 0 0-2.8L12.5 3.3a2 2 0 0 0-1-.3Z"/>
+        <circle cx="7.7" cy="7.7" r="1.4" fill="currentColor" stroke="none"/>
+      </symbol>
+      <symbol id="icon-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3.5" y="5" width="17" height="16" rx="2.2"/>
+        <path d="M3.5 9.5h17"/>
+        <path d="M8 3v4"/>
+        <path d="M16 3v4"/>
+      </symbol>
+      <symbol id="icon-calendar-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3.5" y="5" width="17" height="16" rx="2.2"/>
+        <path d="M3.5 9.5h17"/>
+        <path d="M8 3v4"/>
+        <path d="M16 3v4"/>
+        <path d="M5 21 21 5"/>
+      </symbol>
+      <symbol id="icon-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6.5A1.5 1.5 0 0 0 5 21.5Z"/>
+        <path d="M5 19.5A1.5 1.5 0 0 1 6.5 18H20"/>
+      </symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14"/>
+        <path d="M5 12h14"/>
+      </symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 6l12 12"/>
+        <path d="M18 6 6 18"/>
+      </symbol>
     </defs>
   </svg>
 
@@ -141,9 +170,9 @@
     <div id="menuPanel" class="menu-panel hidden">
       <button id="switchGroupBtn"><svg class="icon"><use href="#icon-swap"/></svg> Сменить группу</button>
       <button id="installBtn" class="hidden"><svg class="icon"><use href="#icon-install"/></svg> Установить на главный экран</button>
-      <button id="exportBtn"><svg class="icon"><use href="#icon-download"/></svg> Экспортировать данные</button>
+      <button id="exportBtn"><svg class="icon"><use href="#icon-download"/></svg> Экспорт (перенос на другое устройство)</button>
       <label class="import-label">
-        <svg class="icon"><use href="#icon-upload"/></svg> Импортировать данные
+        <svg class="icon"><use href="#icon-upload"/></svg> Импорт (с другого устройства)
         <input type="file" id="importInput" accept="application/json" hidden />
       </label>
       <button id="clearBtn" class="danger"><svg class="icon"><use href="#icon-trash"/></svg> Очистить все заметки</button>
@@ -166,6 +195,46 @@
         </button>
       </div>
       <div id="lessonsList" class="lessons-list"></div>
+
+      <button type="button" id="addExtraBtn" class="add-extra-btn">
+        <svg class="icon"><use href="#icon-plus"/></svg> Добавить пару на эту неделю
+      </button>
+      <div id="addExtraForm" class="add-extra-form hidden">
+        <label>
+          <span class="field-label">Предмет</span>
+          <input type="text" id="extraSubject" placeholder="Например: Замена — Физика" />
+        </label>
+        <div class="add-extra-form__row">
+          <label>
+            <span class="field-label">Пара</span>
+            <select id="extraPair"></select>
+          </label>
+          <label>
+            <span class="field-label">Тип</span>
+            <select id="extraType">
+              <option value="лекция">Лекция</option>
+              <option value="пр.">Практика</option>
+              <option value="лаб.">Лабораторная</option>
+            </select>
+          </label>
+        </div>
+        <div class="add-extra-form__row">
+          <label>
+            <span class="field-label">Преподаватель</span>
+            <input type="text" id="extraTeacher" placeholder="Необязательно" />
+          </label>
+          <label>
+            <span class="field-label">Аудитория</span>
+            <input type="text" id="extraRoom" placeholder="Необязательно" />
+          </label>
+        </div>
+        <div class="add-extra-form__actions">
+          <button type="button" id="extraCancelBtn" class="add-extra-form__cancel">Отмена</button>
+          <button type="button" id="extraSaveBtn" class="add-extra-form__save">
+            <svg class="icon"><use href="#icon-plus"/></svg> Добавить
+          </button>
+        </div>
+      </div>
     </main>
 
     <main id="homeworkView" class="view hidden">
@@ -211,6 +280,8 @@
         <span class="section__subject"></span>
         <span class="section__parity hidden"></span>
         <span class="section__hidden-pill hidden">Скрыто</span>
+        <span class="section__week-cancelled-pill hidden">Нет на этой неделе</span>
+        <span class="section__extra-pill hidden">Добавлено на эту неделю</span>
       </div>
       <div class="section__teacher"></div>
       <div class="section__room"></div>
@@ -218,8 +289,23 @@
 
       <div class="section__editor">
         <label>
+          <span class="field-label"><svg class="icon"><use href="#icon-tag"/></svg> Тема занятия</span>
+          <input type="text" class="topic-input" placeholder="О чём была пара (заполнить после занятия)" />
+        </label>
+        <label>
           <span class="field-label"><svg class="icon"><use href="#icon-pencil"/></svg> Домашнее задание</span>
           <textarea class="hw-input" rows="2" placeholder="Например: решить №5–10, стр. 42"></textarea>
+        </label>
+        <label class="due-date-label">
+          <span class="field-label"><svg class="icon"><use href="#icon-calendar"/></svg> Сдать до</span>
+          <input type="date" class="due-date-input" />
+        </label>
+        <button type="button" class="materials-toggle">
+          <svg class="icon"><use href="#icon-book"/></svg> Добавить конспект лекции
+        </button>
+        <label class="materials-label hidden">
+          <span class="field-label"><svg class="icon"><use href="#icon-book"/></svg> Конспект / материалы</span>
+          <textarea class="materials-input" rows="4" placeholder="Вставьте текст лекции, определения, формулы — что угодно"></textarea>
         </label>
         <label>
           <span class="field-label"><svg class="icon"><use href="#icon-note"/></svg> Заметка</span>
@@ -244,8 +330,14 @@
       </div>
 
       <div class="section__visibility">
+        <button type="button" class="week-cancel-btn hide-btn"><svg class="icon"><use href="#icon-calendar-off"/></svg> Пары не будет на этой неделе</button>
+        <p class="hide-hint">Только для текущей недели — на следующей пара снова появится сама.</p>
         <button type="button" class="hide-btn"><svg class="icon"><use href="#icon-ban"/></svg> Не хожу — скрыть эту пару</button>
-        <p class="hide-hint">Пара пропадёт из расписания. Восстановить можно через «Показать скрытые пары».</p>
+        <p class="hide-hint">Пара пропадёт из расписания насовсем. Восстановить можно через «Показать скрытые пары».</p>
+      </div>
+
+      <div class="section__extra-actions hidden">
+        <button type="button" class="extra-delete-btn"><svg class="icon"><use href="#icon-trash"/></svg> Удалить эту пару</button>
       </div>
     </div>
   </template>

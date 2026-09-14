@@ -96,8 +96,15 @@
   function lessonId(dayIdx, pair, sectionIdx) {
     return `${SCHEDULE.id}-${dayIdx}-${pair}-${sectionIdx}`;
   }
+  function extraLessonId(dayIdx, pair, extraId) {
+    return `${SCHEDULE.id}-${dayIdx}-${pair}-extra-${extraId}`;
+  }
+  // id для секции из merged-списка (может быть обычной из расписания или добавленной на неделю).
+  function idForSection(dayIdx, pair, i, section) {
+    return section.__extraId ? extraLessonId(dayIdx, pair, section.__extraId) : lessonId(dayIdx, pair, i);
+  }
   function getEntry(id) {
-    return entries[id] || { hw: "", note: "", done: false };
+    return entries[id] || { hw: "", note: "", done: false, topic: "", dueDate: "", materials: "" };
   }
   function setEntry(id, patch) {
     const current = getEntry(id);
@@ -127,6 +134,89 @@
     saveHidden();
   }
   let showHiddenLessons = false;
+
+  // ---------- разовые изменения на одну неделю (отмена пары / внеплановая пара) ----------
+  const WEEK_OVERRIDES_KEY = "scheduleApp:v1:weekOverrides";
+  function loadWeekOverrides() {
+    try {
+      return JSON.parse(localStorage.getItem(WEEK_OVERRIDES_KEY)) || {};
+    } catch (e) {
+      return {};
+    }
+  }
+  let weekOverrides = loadWeekOverrides();
+  function saveWeekOverrides() {
+    localStorage.setItem(WEEK_OVERRIDES_KEY, JSON.stringify(weekOverrides));
+  }
+  function isoDate(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+  // Ключ текущей недели — понедельник этой недели (та же опорная точка, что у чётности).
+  function currentWeekKey() {
+    return `${SCHEDULE.id}:${isoDate(mondayOf(new Date()))}`;
+  }
+  function getWeekEntry(weekKey) {
+    return weekOverrides[weekKey] || { cancelled: [], extra: [] };
+  }
+  function isCancelledThisWeek(id) {
+    return getWeekEntry(currentWeekKey()).cancelled.includes(id);
+  }
+  function setCancelledThisWeek(id, cancelled) {
+    const key = currentWeekKey();
+    const entry = getWeekEntry(key);
+    const set = new Set(entry.cancelled);
+    if (cancelled) set.add(id);
+    else set.delete(id);
+    weekOverrides[key] = { cancelled: Array.from(set), extra: entry.extra };
+    saveWeekOverrides();
+  }
+  function getExtrasForDay(dayIdx) {
+    return getWeekEntry(currentWeekKey()).extra.filter((e) => e.dayIdx === dayIdx);
+  }
+  function addExtraLesson(dayIdx, section) {
+    const key = currentWeekKey();
+    const entry = getWeekEntry(key);
+    const id = `x${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    weekOverrides[key] = { cancelled: entry.cancelled, extra: [...entry.extra, { id, dayIdx, ...section }] };
+    saveWeekOverrides();
+    return id;
+  }
+  function removeExtraLesson(weekKey, extraId) {
+    const entry = weekOverrides[weekKey];
+    if (!entry) return;
+    weekOverrides[weekKey] = { cancelled: entry.cancelled, extra: entry.extra.filter((e) => e.id !== extraId) };
+    saveWeekOverrides();
+  }
+  // Для вкладки «Домашние задания» — доп. пары ищем по всем неделям этой группы,
+  // чтобы незакрытое задание не терялось, даже если сама пара была только на прошлой неделе.
+  function allExtrasForGroup() {
+    const prefix = `${SCHEDULE.id}:`;
+    const results = [];
+    Object.keys(weekOverrides).forEach((key) => {
+      if (!key.startsWith(prefix)) return;
+      (weekOverrides[key].extra || []).forEach((extra) => results.push({ weekKey: key, extra }));
+    });
+    return results;
+  }
+  // Пары дня с учётом добавленных на эту неделю — общая точка для расписания и баннера.
+  function mergedPairsForDay(dayIdx) {
+    const day = SCHEDULE.days[dayIdx];
+    const merged = {};
+    Object.keys(day.pairs).forEach((p) => {
+      merged[Number(p)] = day.pairs[p].slice();
+    });
+    getExtrasForDay(dayIdx).forEach((ex) => {
+      if (!merged[ex.pair]) merged[ex.pair] = [];
+      merged[ex.pair].push({
+        subject: ex.subject,
+        type: ex.type,
+        teacher: ex.teacher,
+        room: ex.room,
+        __extraId: ex.id,
+      });
+    });
+    return merged;
+  }
 
   // ---------- audio recordings (IndexedDB) ----------
   const DB_NAME = "scheduleAppDB";
@@ -350,9 +440,17 @@
         for (const [sIdx, section] of day.pairs[pair].entries()) {
           const id = lessonId(dayIdx, pair, sIdx);
           const recs = await getRecordings(id);
-          recs.forEach((rec) => items.push({ rec, dayIdx, pair, sIdx, section }));
+          recs.forEach((rec) => items.push({ rec, dayIdx, pair, section, id, isExtra: false }));
         }
       }
+    }
+    for (const { weekKey, extra } of allExtrasForGroup()) {
+      const id = extraLessonId(extra.dayIdx, extra.pair, extra.id);
+      const recs = await getRecordings(id);
+      const section = { subject: extra.subject, type: extra.type, teacher: extra.teacher, room: extra.room };
+      recs.forEach((rec) =>
+        items.push({ rec, dayIdx: extra.dayIdx, pair: extra.pair, section, id, isExtra: true, isCurrentWeek: weekKey === currentWeekKey() })
+      );
     }
     return items;
   }
@@ -369,7 +467,7 @@
   }
 
   function buildRecordingCard(item) {
-    const { rec, dayIdx, pair, sIdx, section } = item;
+    const { rec, dayIdx, pair, section, id, isExtra, isCurrentWeek } = item;
     const card = document.createElement("article");
     card.className = "homework-card recording-card";
 
@@ -379,6 +477,7 @@
     const meta = document.createElement("div");
     meta.className = "homework-card__meta";
     meta.textContent = `${SCHEDULE.days[dayIdx].name} · пара ${pair} · ${SCHEDULE.times[pair - 1]}`;
+    if (isExtra) meta.textContent += " · добавлено на неделю";
     body.appendChild(meta);
 
     const subject = document.createElement("div");
@@ -393,11 +492,10 @@
 
     const actions = buildRecordingActions(rec, url, {
       filename: `запись-${SCHEDULE.days[dayIdx].name}-пара${pair}-${rec.recId}.${extFromMime(rec.blob.type)}`,
-      gotoHandler: () => goToLesson(dayIdx, pair),
+      gotoHandler: !isExtra || isCurrentWeek ? () => goToLesson(dayIdx, pair) : null,
       onDelete: async () => {
         card.remove();
         updateRecCountBadge();
-        const id = lessonId(dayIdx, pair, sIdx);
         const listEl = document.querySelector(`.recordings-list[data-lesson-id="${id}"]`);
         if (listEl) refreshRecordingsList(id, listEl);
         if (!document.querySelectorAll(".recording-card").length) {
@@ -599,11 +697,18 @@
   });
 
   document.getElementById("exportBtn").addEventListener("click", () => {
-    const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+    const payload = {
+      format: "scheduleApp-backup-v2",
+      exportedAt: new Date().toISOString(),
+      entries,
+      hiddenLessons: Array.from(hiddenLessons),
+      weekOverrides,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "schedule-notes-backup.json";
+    a.download = `schedule-backup-${isoDate(new Date())}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -618,8 +723,24 @@
     reader.onload = () => {
       try {
         const imported = JSON.parse(reader.result);
-        entries = Object.assign({}, entries, imported);
+        if (imported && imported.format === "scheduleApp-backup-v2") {
+          entries = Object.assign({}, entries, imported.entries || {});
+          (imported.hiddenLessons || []).forEach((id) => hiddenLessons.add(id));
+          const incomingWeeks = imported.weekOverrides || {};
+          Object.keys(incomingWeeks).forEach((key) => {
+            const incoming = incomingWeeks[key];
+            const existing = getWeekEntry(key);
+            const cancelledSet = new Set([...(existing.cancelled || []), ...(incoming.cancelled || [])]);
+            const extraById = new Map();
+            [...(existing.extra || []), ...(incoming.extra || [])].forEach((ex) => extraById.set(ex.id, ex));
+            weekOverrides[key] = { cancelled: Array.from(cancelledSet), extra: Array.from(extraById.values()) };
+          });
+        } else {
+          entries = Object.assign({}, entries, imported); // старый формат экспорта (только заметки)
+        }
         saveEntries();
+        saveHidden();
+        saveWeekOverrides();
         renderLessons(activeDayIndex);
         renderDayTabs();
         renderHomeworkView();
@@ -751,10 +872,13 @@
       banner.classList.remove("hidden");
       return;
     }
-    const day = SCHEDULE.days[today];
-    const rawPairKeys = Object.keys(day.pairs).map(Number).sort((a, b) => a - b);
+    const mergedPairs = mergedPairsForDay(today);
+    const rawPairKeys = Object.keys(mergedPairs).map(Number).sort((a, b) => a - b);
     const visibleFor = (p) =>
-      day.pairs[p].filter((s, i) => !isHidden(lessonId(today, p, i)) && isSectionActiveForDay(today, s));
+      mergedPairs[p].filter((s, i) => {
+        const id = idForSection(today, p, i, s);
+        return !isHidden(id) && !isCancelledThisWeek(id) && isSectionActiveForDay(today, s);
+      });
     const pairKeys = rawPairKeys.filter((p) => visibleFor(p).length > 0);
     const now = nowMinutes();
     let current = null;
@@ -805,12 +929,66 @@
   const lessonCardTpl = document.getElementById("lessonCardTemplate");
   const sectionTpl = document.getElementById("sectionTemplate");
 
+  // ---------- добавление пары на текущую неделю ----------
+  let extraFormDayIdx = null;
+  const addExtraBtn = document.getElementById("addExtraBtn");
+  const addExtraForm = document.getElementById("addExtraForm");
+  const extraSubjectInput = document.getElementById("extraSubject");
+  const extraPairSelect = document.getElementById("extraPair");
+  const extraTypeSelect = document.getElementById("extraType");
+  const extraTeacherInput = document.getElementById("extraTeacher");
+  const extraRoomInput = document.getElementById("extraRoom");
+
+  SCHEDULE.times.forEach((time, i) => {
+    const opt = document.createElement("option");
+    opt.value = String(i + 1);
+    opt.textContent = `${i + 1} пара · ${time}`;
+    extraPairSelect.appendChild(opt);
+  });
+
+  function resetExtraForm() {
+    addExtraForm.classList.add("hidden");
+    addExtraBtn.classList.remove("hidden");
+    extraSubjectInput.value = "";
+    extraTeacherInput.value = "";
+    extraRoomInput.value = "";
+    extraTypeSelect.value = "пр.";
+    extraPairSelect.value = "1";
+  }
+  function renderExtraForm(dayIdx) {
+    extraFormDayIdx = dayIdx;
+    resetExtraForm();
+  }
+  addExtraBtn.addEventListener("click", () => {
+    addExtraBtn.classList.add("hidden");
+    addExtraForm.classList.remove("hidden");
+    extraSubjectInput.focus();
+  });
+  document.getElementById("extraCancelBtn").addEventListener("click", resetExtraForm);
+  document.getElementById("extraSaveBtn").addEventListener("click", () => {
+    const subject = extraSubjectInput.value.trim();
+    if (!subject) {
+      extraSubjectInput.focus();
+      return;
+    }
+    addExtraLesson(extraFormDayIdx, {
+      subject,
+      pair: Number(extraPairSelect.value),
+      type: extraTypeSelect.value,
+      teacher: extraTeacherInput.value.trim(),
+      room: extraRoomInput.value.trim(),
+    });
+    renderDayTabs();
+    renderLessons(activeDayIndex);
+  });
+
   function countHiddenTotal() {
     let count = 0;
     SCHEDULE.days.forEach((day, dayIdx) => {
       Object.keys(day.pairs).map(Number).forEach((pair) => {
         day.pairs[pair].forEach((_, i) => {
-          if (isHidden(lessonId(dayIdx, pair, i))) count++;
+          const id = lessonId(dayIdx, pair, i);
+          if (isHidden(id) || isCancelledThisWeek(id)) count++;
         });
       });
     });
@@ -836,14 +1014,15 @@
 
   function renderLessons(dayIdx) {
     lessonsList.innerHTML = "";
-    const day = SCHEDULE.days[dayIdx];
-    const pairKeys = Object.keys(day.pairs).map(Number).sort((a, b) => a - b);
+    const mergedPairs = mergedPairsForDay(dayIdx);
+    const pairKeys = Object.keys(mergedPairs).map(Number).sort((a, b) => a - b);
 
     if (!pairKeys.length) {
       const empty = document.createElement("div");
       empty.className = "empty-state";
       empty.innerHTML = "<p>В этот день пар нет.</p>";
       lessonsList.appendChild(empty);
+      renderExtraForm(dayIdx);
       renderNowBanner();
       return;
     }
@@ -853,12 +1032,14 @@
     let renderedCount = 0;
 
     pairKeys.forEach((pair) => {
-      const allSections = day.pairs[pair];
+      const allSections = mergedPairs[pair];
       const entriesToShow = allSections
-        .map((section, i) => ({ section, i }))
-        .filter(({ section, i }) => {
+        .map((section, i) => ({ section, i, id: idForSection(dayIdx, pair, i, section) }))
+        .filter(({ section, id }) => {
+          if (section.__extraId) return true; // добавленные на неделю пары показываются всегда
           if (!isSectionActiveForDay(dayIdx, section)) return false; // в эту неделю этого занятия просто нет
-          return showHiddenLessons || !isHidden(lessonId(dayIdx, pair, i));
+          const suppressed = isHidden(id) || isCancelledThisWeek(id);
+          return showHiddenLessons || !suppressed;
         });
 
       if (!entriesToShow.length) return; // вся пара скрыта, либо ни одно занятие не идёт на этой неделе
@@ -881,16 +1062,25 @@
         sub.textContent = "+ " + visibleSections.slice(1).map(sectionLabel).join(", ");
         subjEl.appendChild(sub);
       }
+      const firstTopic = getEntry(entriesToShow[0].id).topic;
+      if (firstTopic && firstTopic.trim()) {
+        const topicLine = document.createElement("div");
+        topicLine.className = "subj-topic";
+        topicLine.textContent = "Тема: " + firstTopic.trim();
+        subjEl.appendChild(topicLine);
+      }
 
       const badgesEl = card.querySelector(".lesson-card__badges");
-      const hasHw = entriesToShow.some(({ i }) => {
-        const e = getEntry(lessonId(dayIdx, pair, i));
+      const hasHw = entriesToShow.some(({ id }) => {
+        const e = getEntry(id);
         return e.hw && e.hw.trim() && !e.done;
       });
-      const hasNote = entriesToShow.some(({ i }) => getEntry(lessonId(dayIdx, pair, i)).note?.trim());
+      const hasNote = entriesToShow.some(({ id }) => getEntry(id).note?.trim());
+      const hasExtra = entriesToShow.some(({ section }) => section.__extraId);
+      if (hasExtra) badgesEl.appendChild(makeBadge("plus"));
       if (hasHw) badgesEl.appendChild(makeBadge("pencil"));
       if (hasNote) badgesEl.appendChild(makeBadge("note"));
-      Promise.all(entriesToShow.map(({ i }) => getRecordings(lessonId(dayIdx, pair, i)))).then((lists) => {
+      Promise.all(entriesToShow.map(({ id }) => getRecordings(id))).then((lists) => {
         if (lists.some((l) => l.length) && !badgesEl.querySelector(".badge-dot--rec")) {
           const b = makeBadge("mic");
           b.classList.add("badge-dot--rec");
@@ -904,8 +1094,8 @@
       }
 
       const sectionsWrap = card.querySelector(".sections");
-      entriesToShow.forEach(({ section, i }) => {
-        sectionsWrap.appendChild(buildSectionNode(dayIdx, pair, i, section));
+      entriesToShow.forEach(({ section, i, id }) => {
+        sectionsWrap.appendChild(buildSectionNode(dayIdx, pair, i, section, id));
       });
 
       const head = card.querySelector(".lesson-card__head");
@@ -920,17 +1110,23 @@
     });
 
     if (!renderedCount) {
-      const hasHiddenThisWeek = pairKeys.some((pair) =>
-        day.pairs[pair].some((section, i) => isSectionActiveForDay(dayIdx, section) && isHidden(lessonId(dayIdx, pair, i)))
+      const hasSuppressedThisWeek = pairKeys.some((pair) =>
+        mergedPairs[pair].some(
+          (section, i) =>
+            !section.__extraId &&
+            isSectionActiveForDay(dayIdx, section) &&
+            (isHidden(idForSection(dayIdx, pair, i, section)) || isCancelledThisWeek(idForSection(dayIdx, pair, i, section)))
+        )
       );
       const empty = document.createElement("div");
       empty.className = "empty-state";
-      empty.innerHTML = hasHiddenThisWeek
+      empty.innerHTML = hasSuppressedThisWeek
         ? "<p>Все пары в этот день скрыты.</p><p class=\"empty-state__hint\">Нажмите «Показать скрытые пары» выше, чтобы вернуть их.</p>"
         : "<p>На этой неделе в этот день пар нет.</p><p class=\"empty-state__hint\">Некоторые занятия идут только по определённым датам.</p>";
       lessonsList.appendChild(empty);
     }
 
+    renderExtraForm(dayIdx);
     updateHiddenCountUI();
     renderNowBanner();
     updateRecordButtonsUI();
@@ -943,11 +1139,12 @@
     return span;
   }
 
-  function buildSectionNode(dayIdx, pair, sIdx, section) {
+  function buildSectionNode(dayIdx, pair, sIdx, section, idOverride) {
     const node = sectionTpl.content.cloneNode(true);
     const root = node.querySelector(".section");
-    const id = lessonId(dayIdx, pair, sIdx);
+    const id = idOverride || lessonId(dayIdx, pair, sIdx);
     const entry = getEntry(id);
+    const isExtra = !!section.__extraId;
 
     const typeBadge = root.querySelector(".type-badge");
     typeBadge.textContent = TYPE_SHORT[section.type] || section.type;
@@ -956,10 +1153,17 @@
     root.querySelector(".section__subject").textContent = sectionLabel(section);
 
     const hiddenPill = root.querySelector(".section__hidden-pill");
-    if (isHidden(id)) {
+    if (!isExtra && isHidden(id)) {
       root.classList.add("is-hidden-lesson");
       hiddenPill.classList.remove("hidden");
     }
+    const weekCancelledPill = root.querySelector(".section__week-cancelled-pill");
+    if (!isExtra && isCancelledThisWeek(id)) {
+      root.classList.add("is-hidden-lesson");
+      weekCancelledPill.classList.remove("hidden");
+    }
+    const extraPill = root.querySelector(".section__extra-pill");
+    if (isExtra) extraPill.classList.remove("hidden");
 
     const parityEl = root.querySelector(".section__parity");
     if (section.parity) {
@@ -977,14 +1181,31 @@
       noteMeta.classList.remove("hidden");
     }
 
+    const topicInput = root.querySelector(".topic-input");
     const hwInput = root.querySelector(".hw-input");
+    const dueDateInput = root.querySelector(".due-date-input");
     const noteInput = root.querySelector(".note-input");
+    const materialsInput = root.querySelector(".materials-input");
+    const materialsLabel = root.querySelector(".materials-label");
+    const materialsToggle = root.querySelector(".materials-toggle");
     const doneInput = root.querySelector(".done-input");
     const saveStatus = root.querySelector(".save-status");
 
+    topicInput.value = entry.topic || "";
     hwInput.value = entry.hw || "";
+    dueDateInput.value = entry.dueDate || "";
     noteInput.value = entry.note || "";
+    materialsInput.value = entry.materials || "";
     doneInput.checked = !!entry.done;
+    if (entry.materials && entry.materials.trim()) {
+      materialsLabel.classList.remove("hidden");
+      materialsToggle.classList.add("hidden");
+    }
+    materialsToggle.addEventListener("click", () => {
+      materialsToggle.classList.add("hidden");
+      materialsLabel.classList.remove("hidden");
+      materialsInput.focus();
+    });
 
     let saveTimer = null;
     function flashSaved() {
@@ -1004,8 +1225,11 @@
       }, 400);
     }
 
+    topicInput.addEventListener("input", () => scheduleSave({ topic: topicInput.value }));
     hwInput.addEventListener("input", () => scheduleSave({ hw: hwInput.value }));
+    dueDateInput.addEventListener("change", () => scheduleSave({ dueDate: dueDateInput.value }));
     noteInput.addEventListener("input", () => scheduleSave({ note: noteInput.value }));
+    materialsInput.addEventListener("input", () => scheduleSave({ materials: materialsInput.value }));
     doneInput.addEventListener("change", () => {
       setEntry(id, { done: doneInput.checked });
       flashSaved();
@@ -1024,27 +1248,75 @@
     });
     refreshRecordingsList(id, recordingsListEl);
 
-    const hideBtn = root.querySelector(".hide-btn");
-    function renderHideBtn() {
-      if (isHidden(id)) {
-        hideBtn.innerHTML = svgIcon("restore") + " Восстановить эту пару";
-        hideBtn.classList.add("is-hidden");
-      } else {
-        hideBtn.innerHTML = svgIcon("ban") + " Не хожу — скрыть эту пару";
-        hideBtn.classList.remove("is-hidden");
+    const visibilityBlock = root.querySelector(".section__visibility");
+    const extraActionsBlock = root.querySelector(".section__extra-actions");
+
+    if (isExtra) {
+      visibilityBlock.remove();
+      extraActionsBlock.classList.remove("hidden");
+      const deleteBtn = root.querySelector(".extra-delete-btn");
+      deleteBtn.addEventListener("click", () => {
+        if (!confirm("Удалить эту пару без возможности восстановления?")) return;
+        removeExtraLesson(currentWeekKey(), section.__extraId);
+        renderDayTabs();
+        renderLessons(activeDayIndex);
+      });
+    } else {
+      extraActionsBlock.remove();
+      const hideBtn = root.querySelector(".hide-btn:not(.week-cancel-btn)");
+      function renderHideBtn() {
+        if (isHidden(id)) {
+          hideBtn.innerHTML = svgIcon("restore") + " Восстановить эту пару";
+          hideBtn.classList.add("is-hidden");
+        } else {
+          hideBtn.innerHTML = svgIcon("ban") + " Не хожу — скрыть эту пару";
+          hideBtn.classList.remove("is-hidden");
+        }
       }
+      renderHideBtn();
+      hideBtn.addEventListener("click", () => {
+        setHidden(id, !isHidden(id));
+        renderDayTabs();
+        renderLessons(activeDayIndex);
+      });
+
+      const weekCancelBtn = root.querySelector(".week-cancel-btn");
+      function renderWeekCancelBtn() {
+        if (isCancelledThisWeek(id)) {
+          weekCancelBtn.innerHTML = svgIcon("calendar") + " Пара всё-таки будет на этой неделе";
+          weekCancelBtn.classList.add("is-hidden");
+        } else {
+          weekCancelBtn.innerHTML = svgIcon("calendar-off") + " Пары не будет на этой неделе";
+          weekCancelBtn.classList.remove("is-hidden");
+        }
+      }
+      renderWeekCancelBtn();
+      weekCancelBtn.addEventListener("click", () => {
+        setCancelledThisWeek(id, !isCancelledThisWeek(id));
+        renderDayTabs();
+        renderLessons(activeDayIndex);
+      });
     }
-    renderHideBtn();
-    hideBtn.addEventListener("click", () => {
-      setHidden(id, !isHidden(id));
-      renderDayTabs();
-      renderLessons(activeDayIndex);
-    });
 
     return node;
   }
 
   // ---------- homework view ----------
+  function dueDateUrgency(dueDateStr) {
+    if (!dueDateStr) return "none";
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDateStr + "T00:00:00");
+    const diffDays = Math.round((due - today) / 86400000);
+    if (diffDays < 0) return "overdue";
+    if (diffDays <= 1) return "soon";
+    return "normal";
+  }
+  function formatDueDate(dueDateStr) {
+    return new Date(dueDateStr + "T00:00:00").toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
+  }
+  const DUE_LABEL = { overdue: "Просрочено", soon: "Скоро", normal: "" };
+
   function renderHomeworkView() {
     const list = document.getElementById("homeworkList");
     const empty = document.getElementById("homeworkEmpty");
@@ -1058,10 +1330,25 @@
           const id = lessonId(dayIdx, pair, sIdx);
           const entry = getEntry(id);
           if (entry.hw && entry.hw.trim() && !isHidden(id)) {
-            items.push({ id, dayIdx, pair, sIdx, section, entry });
+            items.push({ id, dayIdx, pair, section, entry, isExtra: false });
           }
         });
       });
+    });
+    allExtrasForGroup().forEach(({ weekKey, extra }) => {
+      const id = extraLessonId(extra.dayIdx, extra.pair, extra.id);
+      const entry = getEntry(id);
+      if (entry.hw && entry.hw.trim()) {
+        items.push({
+          id,
+          dayIdx: extra.dayIdx,
+          pair: extra.pair,
+          section: { subject: extra.subject, type: extra.type, teacher: extra.teacher, room: extra.room },
+          entry,
+          isExtra: true,
+          isCurrentWeek: weekKey === currentWeekKey(),
+        });
+      }
     });
 
     const pendingCount = items.filter((it) => !it.entry.done).length;
@@ -1080,13 +1367,21 @@
 
     items.sort((a, b) => {
       if (a.entry.done !== b.entry.done) return a.entry.done ? 1 : -1;
+      const aDue = a.entry.dueDate || "";
+      const bDue = b.entry.dueDate || "";
+      if (aDue !== bDue) {
+        if (!aDue) return 1;
+        if (!bDue) return -1;
+        return aDue < bDue ? -1 : 1;
+      }
       if (a.dayIdx !== b.dayIdx) return a.dayIdx - b.dayIdx;
       return a.pair - b.pair;
     });
 
     items.forEach((it) => {
+      const urgency = it.entry.done ? "none" : dueDateUrgency(it.entry.dueDate);
       const card = document.createElement("article");
-      card.className = "homework-card" + (it.entry.done ? " is-done" : "");
+      card.className = "homework-card" + (it.entry.done ? " is-done" : "") + (urgency !== "none" ? ` is-due-${urgency}` : "");
 
       const checkWrap = document.createElement("div");
       checkWrap.className = "homework-card__check";
@@ -1107,6 +1402,7 @@
       const meta = document.createElement("div");
       meta.className = "homework-card__meta";
       meta.textContent = `${SCHEDULE.days[it.dayIdx].name} · пара ${it.pair} · ${SCHEDULE.times[it.pair - 1]}`;
+      if (it.isExtra) meta.textContent += " · добавлено на неделю";
       body.appendChild(meta);
 
       const subject = document.createElement("div");
@@ -1114,10 +1410,25 @@
       subject.textContent = sectionLabel(it.section);
       body.appendChild(subject);
 
+      if (it.entry.topic && it.entry.topic.trim()) {
+        const topic = document.createElement("div");
+        topic.className = "homework-card__topic";
+        topic.innerHTML = svgIcon("tag") + " " + escapeHtml(it.entry.topic.trim());
+        body.appendChild(topic);
+      }
+
       const text = document.createElement("div");
       text.className = "homework-card__text";
       text.textContent = it.entry.hw;
       body.appendChild(text);
+
+      if (it.entry.dueDate) {
+        const due = document.createElement("div");
+        due.className = "homework-card__due";
+        const label = DUE_LABEL[urgency];
+        due.innerHTML = svgIcon("calendar") + ` Сдать до ${formatDueDate(it.entry.dueDate)}` + (label ? ` · ${label}` : "");
+        body.appendChild(due);
+      }
 
       if (it.entry.note && it.entry.note.trim()) {
         const note = document.createElement("div");
@@ -1126,14 +1437,15 @@
         body.appendChild(note);
       }
 
-      const goto = document.createElement("button");
-      goto.className = "homework-card__goto";
-      goto.textContent = "Открыть →";
-      goto.addEventListener("click", () => goToLesson(it.dayIdx, it.pair));
-
       card.appendChild(checkWrap);
       card.appendChild(body);
-      card.appendChild(goto);
+      if (!it.isExtra || it.isCurrentWeek) {
+        const goto = document.createElement("button");
+        goto.className = "homework-card__goto";
+        goto.textContent = "Открыть →";
+        goto.addEventListener("click", () => goToLesson(it.dayIdx, it.pair));
+        card.appendChild(goto);
+      }
       list.appendChild(card);
     });
   }
