@@ -1,6 +1,54 @@
 (function () {
   "use strict";
 
+  // ---------- выбор группы ----------
+  const GROUP_KEY = "scheduleApp:v1:group";
+  let currentGroup = GROUPS.find((g) => g.id === localStorage.getItem(GROUP_KEY));
+
+  const groupPicker = document.getElementById("groupPicker");
+  const groupPickerList = document.getElementById("groupPickerList");
+  const groupPickerCancel = document.getElementById("groupPickerCancel");
+  const appRoot = document.querySelector(".app");
+
+  function renderGroupPickerList() {
+    groupPickerList.innerHTML = "";
+    GROUPS.forEach((g) => {
+      const btn = document.createElement("button");
+      btn.className = "group-picker__item" + (currentGroup && g.id === currentGroup.id ? " is-current" : "");
+      const directionLine = g.direction
+        ? `<div class="group-picker__item-direction">${escapeHtml(g.direction)}${g.profile ? " · " + escapeHtml(g.profile) : ""}</div>`
+        : "";
+      btn.innerHTML =
+        `<div class="group-picker__item-name">${escapeHtml(g.group)}</div>` +
+        `<div class="group-picker__item-code">${escapeHtml(g.groupCode)}</div>` +
+        directionLine;
+      btn.addEventListener("click", () => {
+        localStorage.setItem(GROUP_KEY, g.id);
+        location.reload();
+      });
+      groupPickerList.appendChild(btn);
+    });
+  }
+
+  function showGroupPicker(allowCancel) {
+    renderGroupPickerList();
+    groupPickerCancel.classList.toggle("hidden", !allowCancel);
+    groupPicker.classList.remove("hidden");
+    appRoot.classList.add("hidden");
+  }
+  function hideGroupPicker() {
+    groupPicker.classList.add("hidden");
+    appRoot.classList.remove("hidden");
+  }
+  groupPickerCancel.addEventListener("click", hideGroupPicker);
+
+  if (!currentGroup) {
+    showGroupPicker(false);
+    return; // ждём выбора группы — остальной код инициализации ниже не выполняется
+  }
+  hideGroupPicker();
+  const SCHEDULE = currentGroup;
+
   const STORAGE_KEY = "scheduleApp:v1:entries";
   const THEME_KEY = "scheduleApp:v1:theme";
   const PARITY_KEY = "scheduleApp:v1:parity";
@@ -21,7 +69,7 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
   }
   function lessonId(dayIdx, pair, sectionIdx) {
-    return `${dayIdx}-${pair}-${sectionIdx}`;
+    return `${SCHEDULE.id}-${dayIdx}-${pair}-${sectionIdx}`;
   }
   function getEntry(id) {
     return entries[id] || { hw: "", note: "", done: false };
@@ -521,6 +569,11 @@
     }
   });
 
+  document.getElementById("switchGroupBtn").addEventListener("click", () => {
+    menuPanel.classList.add("hidden");
+    showGroupPicker(true);
+  });
+
   document.getElementById("exportBtn").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -568,7 +621,9 @@
   });
 
   // ---------- header ----------
-  document.getElementById("groupLabel").textContent = `${SCHEDULE.group} · ${SCHEDULE.groupCode}`;
+  const groupLabelEl = document.getElementById("groupLabel");
+  groupLabelEl.textContent = `${SCHEDULE.group} · ${SCHEDULE.groupCode}`;
+  if (SCHEDULE.direction) groupLabelEl.title = SCHEDULE.direction + (SCHEDULE.profile ? " · " + SCHEDULE.profile : "");
 
   // ---------- view switching ----------
   const scheduleView = document.getElementById("scheduleView");
@@ -629,9 +684,10 @@
   let activeDayIndex = todayIndex() ?? 0;
 
   function dayHasPendingHomework(dayIdx) {
+    const prefix = `${SCHEDULE.id}-${dayIdx}-`;
     return Object.keys(entries).some((id) => {
-      const [d] = id.split("-").map(Number);
-      return d === dayIdx && !isHidden(id) && entries[id].hw && entries[id].hw.trim() && !entries[id].done;
+      if (!id.startsWith(prefix)) return false;
+      return !isHidden(id) && entries[id].hw && entries[id].hw.trim() && !entries[id].done;
     });
   }
 

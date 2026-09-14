@@ -19,6 +19,15 @@
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="groupPicker" class="group-picker hidden">
+    <div class="group-picker__card">
+      <h2>Выберите группу</h2>
+      <p class="group-picker__hint">Расписание запомнится и в следующий раз откроется сразу. Сменить группу потом можно в меню «⋯».</p>
+      <div id="groupPickerList" class="group-picker__list"></div>
+      <button id="groupPickerCancel" class="group-picker__cancel hidden">Отмена</button>
+    </div>
+  </div>
+
   <div class="app">
     <header class="topbar">
       <div class="topbar__title">
@@ -33,6 +42,7 @@
     </header>
 
     <div id="menuPanel" class="menu-panel hidden">
+      <button id="switchGroupBtn">🔁 Сменить группу</button>
       <button id="installBtn" class="hidden">📲 Установить на главный экран</button>
       <button id="exportBtn">⬇️ Экспортировать данные</button>
       <label class="import-label">
