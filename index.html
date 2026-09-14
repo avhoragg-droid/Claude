@@ -161,6 +161,10 @@
         <path d="M10.5 6.5l1.2-1.2a4 4 0 0 1 5.7 5.7L16 12.4"/>
         <path d="M13.5 17.5l-1.2 1.2a4 4 0 0 1-5.7-5.7L8 11.6"/>
       </symbol>
+      <symbol id="icon-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 8.5a1.5 1.5 0 0 1 1.5-1.5h2l1.2-2h6.6l1.2 2h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5Z"/>
+        <circle cx="12" cy="13" r="3.4"/>
+      </symbol>
     </defs>
   </svg>
 
@@ -282,6 +286,11 @@
       </div>
     </div>
 
+    <div id="photoLightbox" class="photo-lightbox hidden">
+      <button type="button" id="photoLightboxClose" class="photo-lightbox__close"><svg class="icon"><use href="#icon-x"/></svg></button>
+      <img id="photoLightboxImg" class="photo-lightbox__img" alt="" />
+    </div>
+
     <nav class="view-switch">
       <button class="view-switch__btn is-active" data-view="schedule">Расписание</button>
       <button class="view-switch__btn" data-view="homework">Домашние задания <span id="hwCount" class="count-badge hidden">0</span></button>
@@ -342,6 +351,10 @@
     </main>
 
     <main id="homeworkView" class="view hidden">
+      <div id="hwProgressRow" class="hw-progress-row hidden">
+        <div class="hw-progress-track"><div id="hwProgressFill" class="hw-progress-fill"></div></div>
+        <span id="hwProgressLabel" class="hw-progress-label"></span>
+      </div>
       <div class="hw-search-row">
         <input type="search" id="hwSearch" class="hw-search-input" placeholder="Поиск по предмету, теме, заданию, конспекту…" />
       </div>
@@ -438,6 +451,14 @@
         </div>
         <p class="record-hint">Запись хранится только в этом браузере и никуда не отправляется.</p>
         <div class="recordings-list"></div>
+      </div>
+
+      <div class="section__photos">
+        <label class="photo-add-btn">
+          <svg class="icon"><use href="#icon-camera"/></svg> Добавить фото (доска, методичка)
+          <input type="file" accept="image/*" capture="environment" class="photo-input" hidden />
+        </label>
+        <div class="photos-gallery"></div>
       </div>
 
       <div class="section__visibility">

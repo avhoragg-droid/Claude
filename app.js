@@ -285,19 +285,24 @@
     return merged;
   }
 
-  // ---------- audio recordings (IndexedDB) ----------
+  // ---------- audio recordings + photos (IndexedDB, общая база) ----------
   const DB_NAME = "scheduleAppDB";
   const DB_STORE = "recordings";
+  const PHOTO_STORE = "photos";
   let dbPromise = null;
   function openRecordingsDB() {
     if (!dbPromise) {
       dbPromise = new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, 1);
+        const req = indexedDB.open(DB_NAME, 2);
         req.onupgradeneeded = () => {
           const db = req.result;
           if (!db.objectStoreNames.contains(DB_STORE)) {
             const store = db.createObjectStore(DB_STORE, { keyPath: "recId", autoIncrement: true });
             store.createIndex("lessonId", "lessonId", { unique: false });
+          }
+          if (!db.objectStoreNames.contains(PHOTO_STORE)) {
+            const photoStore = db.createObjectStore(PHOTO_STORE, { keyPath: "photoId", autoIncrement: true });
+            photoStore.createIndex("lessonId", "lessonId", { unique: false });
           }
         };
         req.onsuccess = () => resolve(req.result);
@@ -305,6 +310,86 @@
       });
     }
     return dbPromise;
+  }
+  async function addPhoto(lessonIdVal, blob) {
+    const db = await openRecordingsDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PHOTO_STORE, "readwrite");
+      const req = tx.objectStore(PHOTO_STORE).add({ lessonId: lessonIdVal, blob, createdAt: Date.now() });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function getPhotos(lessonIdVal) {
+    const db = await openRecordingsDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PHOTO_STORE, "readonly");
+      const req = tx.objectStore(PHOTO_STORE).index("lessonId").getAll(lessonIdVal);
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function deletePhoto(photoId) {
+    const db = await openRecordingsDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PHOTO_STORE, "readwrite");
+      tx.objectStore(PHOTO_STORE).delete(photoId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  const photoLightbox = document.getElementById("photoLightbox");
+  const photoLightboxImg = document.getElementById("photoLightboxImg");
+  function openPhotoLightbox(url) {
+    photoLightboxImg.src = url;
+    photoLightbox.classList.remove("hidden");
+  }
+  document.getElementById("photoLightboxClose").addEventListener("click", () => photoLightbox.classList.add("hidden"));
+  photoLightbox.addEventListener("click", (e) => {
+    if (e.target === photoLightbox) photoLightbox.classList.add("hidden");
+  });
+  function buildPhotoThumb(photo, onDeleted) {
+    const wrap = document.createElement("div");
+    wrap.className = "photo-thumb";
+    const url = URL.createObjectURL(photo.blob);
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "Фото к паре";
+    img.addEventListener("click", () => openPhotoLightbox(url));
+    wrap.appendChild(img);
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "photo-thumb__delete";
+    del.innerHTML = svgIcon("x");
+    del.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm("Удалить это фото?")) return;
+      await deletePhoto(photo.photoId);
+      URL.revokeObjectURL(url);
+      onDeleted();
+    });
+    wrap.appendChild(del);
+    return wrap;
+  }
+  async function refreshPhotosGallery(id, galleryEl) {
+    const photos = await getPhotos(id);
+    galleryEl.innerHTML = "";
+    photos
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .forEach((photo) => galleryEl.appendChild(buildPhotoThumb(photo, () => refreshPhotosGallery(id, galleryEl))));
+    // Точечно синхронизируем значок на свёрнутой карточке (не трогая остальной список).
+    const card = galleryEl.closest(".lesson-card");
+    const badgesEl = card && card.querySelector(".lesson-card__badges");
+    if (badgesEl) {
+      const existing = badgesEl.querySelector(".badge-dot--photo");
+      if (photos.length && !existing) {
+        const b = makeBadge("camera");
+        b.classList.add("badge-dot--photo");
+        badgesEl.appendChild(b);
+      } else if (!photos.length && existing) {
+        existing.remove();
+      }
+    }
   }
   async function addRecording(lessonIdVal, blob, durationSec) {
     const db = await openRecordingsDB();
@@ -1441,10 +1526,13 @@
       if (now < start && next === null) next = p;
     }
     if (current) {
-      const [, end] = parseRange(SCHEDULE.times[current - 1]);
+      const [start, end] = parseRange(SCHEDULE.times[current - 1]);
       const label = visibleFor(current).map(sectionLabel).join(" / ");
       const endStr = SCHEDULE.times[current - 1].split("–")[1];
-      banner.innerHTML = `Сейчас ${current}-я пара: <strong>${escapeHtml(label)}</strong> · до ${endStr} <span class="now-banner__countdown">(ещё ${formatCountdown(end - now)})</span>`;
+      const progressPct = Math.min(100, Math.max(0, ((now - start) / (end - start)) * 100));
+      banner.innerHTML =
+        `Сейчас ${current}-я пара: <strong>${escapeHtml(label)}</strong> · до ${endStr} <span class="now-banner__countdown">(ещё ${formatCountdown(end - now)})</span>` +
+        `<div class="now-banner__progress"><div class="now-banner__progress-fill" style="width:${progressPct.toFixed(1)}%"></div></div>`;
       banner.classList.remove("hidden");
     } else if (next) {
       const [start] = parseRange(SCHEDULE.times[next - 1]);
@@ -1643,6 +1731,13 @@
           badgesEl.appendChild(b);
         }
       });
+      Promise.all(entriesToShow.map(({ id }) => getPhotos(id))).then((lists) => {
+        if (lists.some((l) => l.length) && !badgesEl.querySelector(".badge-dot--photo")) {
+          const b = makeBadge("camera");
+          b.classList.add("badge-dot--photo");
+          badgesEl.appendChild(b);
+        }
+      });
 
       if (dayIdx === today) {
         const [start, end] = parseRange(SCHEDULE.times[pair - 1]);
@@ -1804,6 +1899,21 @@
     });
     refreshRecordingsList(id, recordingsListEl);
 
+    const photoInput = root.querySelector(".photo-input");
+    const photosGalleryEl = root.querySelector(".photos-gallery");
+    photoInput.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      try {
+        await addPhoto(id, file);
+        refreshPhotosGallery(id, photosGalleryEl);
+      } catch (err) {
+        alert("Не удалось сохранить фото: " + err.message);
+      }
+    });
+    refreshPhotosGallery(id, photosGalleryEl);
+
     const visibilityBlock = root.querySelector(".section__visibility");
     const extraActionsBlock = root.querySelector(".section__extra-actions");
 
@@ -1934,6 +2044,17 @@
       countBadge.classList.remove("hidden");
     } else {
       countBadge.classList.add("hidden");
+    }
+
+    const progressRow = document.getElementById("hwProgressRow");
+    if (allItems.length > 0) {
+      const doneCount = allItems.length - pendingCount;
+      const pct = Math.round((doneCount / allItems.length) * 100);
+      document.getElementById("hwProgressFill").style.width = pct + "%";
+      document.getElementById("hwProgressLabel").textContent = `${doneCount} из ${allItems.length} выполнено (${pct}%)`;
+      progressRow.classList.remove("hidden");
+    } else {
+      progressRow.classList.add("hidden");
     }
 
     if (!allItems.length) {
