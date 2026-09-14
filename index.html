@@ -150,6 +150,17 @@
         <path d="M4.5 16.3c.4-.6 1.5-1.9 1.5-3.8"/>
         <path d="M10 19.5a2 2 0 0 0 4 0"/>
       </symbol>
+      <symbol id="icon-sync" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 12a8 8 0 0 1 13.66-5.66L20 8.5"/>
+        <path d="M20 4v4.5h-4.5"/>
+        <path d="M20 12a8 8 0 0 1-13.66 5.66L4 15.5"/>
+        <path d="M4 20v-4.5h4.5"/>
+      </symbol>
+      <symbol id="icon-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9.5 14.5l5-5"/>
+        <path d="M10.5 6.5l1.2-1.2a4 4 0 0 1 5.7 5.7L16 12.4"/>
+        <path d="M13.5 17.5l-1.2 1.2a4 4 0 0 1-5.7-5.7L8 11.6"/>
+      </symbol>
     </defs>
   </svg>
 
@@ -184,6 +195,7 @@
       <button id="switchGroupBtn"><svg class="icon"><use href="#icon-swap"/></svg> Сменить группу</button>
       <button id="installBtn" class="hidden"><svg class="icon"><use href="#icon-install"/></svg> Установить на главный экран</button>
       <button id="notifyToggleBtn"><svg class="icon"><use href="#icon-bell"/></svg> <span class="notify-toggle-label">Уведомления о дедлайнах</span></button>
+      <button id="syncBtn"><svg class="icon"><use href="#icon-sync"/></svg> <span class="sync-toggle-label">Синхронизация</span></button>
       <button id="statsBtn"><svg class="icon"><use href="#icon-sparkle"/></svg> Статистика</button>
       <button id="icsExportBtn"><svg class="icon"><use href="#icon-calendar"/></svg> Дедлайны в календарь (.ics)</button>
       <button id="qrShowBtn"><svg class="icon"><use href="#icon-download"/></svg> Показать QR-код (перенос данных)</button>
@@ -226,6 +238,47 @@
         <p class="modal-hint">Наведите камеру на QR-код, показанный на другом устройстве.</p>
         <video id="qrScanVideo" class="qr-scan-video" playsinline muted></video>
         <p id="qrScanStatus" class="qr-scan-status"></p>
+      </div>
+    </div>
+
+    <div id="syncModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-card__head">
+          <h2>Синхронизация устройств</h2>
+          <button type="button" id="syncCloseBtn" class="modal-close"><svg class="icon"><use href="#icon-x"/></svg></button>
+        </div>
+
+        <div id="syncNotConfigured" class="sync-block hidden">
+          <p class="modal-hint">Синхронизация ещё не настроена для этого сайта — нужно один раз подключить бесплатное облачное хранилище. См. раздел «Синхронизация между устройствами» в README репозитория.</p>
+        </div>
+
+        <div id="syncNoPair" class="sync-block hidden">
+          <p class="modal-hint">Свяжите это устройство со вторым — дальше все изменения (задания, темы, заметки, скрытые и добавленные пары) будут появляться на обоих автоматически, в реальном времени.</p>
+          <button type="button" id="syncCreateBtn" class="sync-action-btn">
+            <svg class="icon"><use href="#icon-sync"/></svg> Это первое устройство — создать пару
+          </button>
+          <button type="button" id="syncJoinScanBtn" class="sync-action-btn">
+            <svg class="icon"><use href="#icon-link"/></svg> У меня есть код — сканировать QR
+          </button>
+          <button type="button" id="syncJoinManualBtn" class="sync-action-btn sync-action-btn--secondary">
+            Ввести код вручную
+          </button>
+          <div id="syncJoinManualForm" class="sync-join-form hidden">
+            <input type="text" id="syncJoinCodeInput" class="sync-code-input" placeholder="Код синхронизации" autocapitalize="off" autocorrect="off" spellcheck="false" />
+            <button type="button" id="syncJoinManualSubmit" class="sync-action-btn">Подключиться</button>
+          </div>
+        </div>
+
+        <div id="syncPaired" class="sync-block hidden">
+          <div id="syncStatusRow" class="sync-status-row">
+            <span id="syncStatusDot" class="sync-status-dot"></span>
+            <span id="syncStatusText">—</span>
+          </div>
+          <div id="syncQrWrap" class="qr-show-body"></div>
+          <p class="modal-hint">Этот же код (или QR) можно отсканировать ещё на одном устройстве, чтобы добавить его в ту же пару/группу синхронизации.</p>
+          <p id="syncCodeText" class="sync-code-text"></p>
+          <button type="button" id="syncDisconnectBtn" class="sync-action-btn sync-action-btn--danger">Отключить синхронизацию</button>
+        </div>
       </div>
     </div>
 
@@ -403,6 +456,9 @@
   <script src="schedule-data.js"></script>
   <script src="vendor/qrcode.js"></script>
   <script src="vendor/jsQR.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

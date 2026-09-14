@@ -1,4 +1,4 @@
-const CACHE_NAME = "schedule-app-v9";
+const CACHE_NAME = "schedule-app-v10";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,7 @@ const APP_SHELL = [
   "./manifest.json",
   "./vendor/qrcode.js",
   "./vendor/jsQR.js",
+  "./firebase-config.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/apple-touch-icon.png",

@@ -97,6 +97,19 @@
   const PARITY_KEY = "scheduleApp:v1:parity";
   const HIDDEN_KEY = "scheduleApp:v1:hidden";
 
+  // Состояние синхронизации объявлено здесь (а не рядом с остальным кодом синхронизации
+  // ниже по файлу), потому что save*() уже на этой стадии инициализации могут вызвать
+  // pushSyncPayload(), а он читает syncDbRef — с `let` это упало бы в temporal dead zone,
+  // если бы переменная была объявлена позже используемого места.
+  const SYNC_CODE_KEY = "scheduleApp:v1:syncCode";
+  let syncCode = localStorage.getItem(SYNC_CODE_KEY) || null;
+  let syncApp = null;
+  let syncDbRef = null;
+  let applyingRemoteSync = false;
+  let syncPushTimer = null;
+  let syncState = "idle"; // idle | connecting | synced | error
+  let syncErrorDetail = "";
+
   const DAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 
   // ---------- storage ----------
@@ -110,6 +123,7 @@
   let entries = loadEntries();
   function saveEntries() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    if (typeof pushSyncPayload === "function") pushSyncPayload();
   }
   function lessonId(dayIdx, pair, sectionIdx) {
     return `${SCHEDULE.id}-${dayIdx}-${pair}-${sectionIdx}`;
@@ -142,13 +156,30 @@
   let hiddenLessons = loadHidden();
   function saveHidden() {
     localStorage.setItem(HIDDEN_KEY, JSON.stringify(Array.from(hiddenLessons)));
+    if (typeof pushSyncPayload === "function") pushSyncPayload();
   }
   function isHidden(id) {
     return hiddenLessons.has(id);
   }
+  // hiddenMeta хранит момент последнего изменения по каждой паре — нужно только для
+  // непрерывной синхронизации между устройствами (last-write-wins при объединении).
+  const HIDDEN_META_KEY = "scheduleApp:v1:hiddenMeta";
+  function loadHiddenMeta() {
+    try {
+      return JSON.parse(localStorage.getItem(HIDDEN_META_KEY)) || {};
+    } catch (e) {
+      return {};
+    }
+  }
+  let hiddenMeta = loadHiddenMeta();
+  function saveHiddenMeta() {
+    localStorage.setItem(HIDDEN_META_KEY, JSON.stringify(hiddenMeta));
+  }
   function setHidden(id, hide) {
     if (hide) hiddenLessons.add(id);
     else hiddenLessons.delete(id);
+    hiddenMeta[id] = { hidden: hide, updatedAt: Date.now() };
+    saveHiddenMeta();
     saveHidden();
   }
   let showHiddenLessons = false;
@@ -165,6 +196,7 @@
   let weekOverrides = loadWeekOverrides();
   function saveWeekOverrides() {
     localStorage.setItem(WEEK_OVERRIDES_KEY, JSON.stringify(weekOverrides));
+    if (typeof pushSyncPayload === "function") pushSyncPayload();
   }
   // Разовые изменения нужны только пока актуальна их неделя — чистим то, что старше ~4 месяцев,
   // чтобы localStorage не рос бесконечно от прошедших замен/переносов.
@@ -939,11 +971,13 @@
   const qrScanStatus = document.getElementById("qrScanStatus");
   let qrScanStream = null;
   let qrScanRAF = null;
+  let qrScanOnDecode = null;
   function stopQrScan() {
     if (qrScanRAF) cancelAnimationFrame(qrScanRAF);
     qrScanRAF = null;
     if (qrScanStream) qrScanStream.getTracks().forEach((t) => t.stop());
     qrScanStream = null;
+    qrScanOnDecode = null;
     qrScanModal.classList.add("hidden");
   }
   document.getElementById("qrScanCloseBtn").addEventListener("click", stopQrScan);
@@ -960,22 +994,17 @@
       ctx.drawImage(qrScanVideo, 0, 0, canvas.width, canvas.height);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const code = typeof jsQR === "function" ? jsQR(imageData.data, imageData.width, imageData.height) : null;
-      if (code && code.data) {
-        try {
-          importBackupPayload(JSON.parse(code.data));
-          qrScanStatus.textContent = "Готово — данные импортированы.";
-          stopQrScan();
-          alert("Данные импортированы.");
-          return;
-        } catch (err) {
-          qrScanStatus.textContent = "Найден QR-код, но не удалось прочитать данные: " + err.message;
-        }
+      if (code && code.data && qrScanOnDecode) {
+        qrScanOnDecode(code.data);
+        return;
       }
     }
     qrScanRAF = requestAnimationFrame(qrScanTick);
   }
-  document.getElementById("qrScanBtn").addEventListener("click", async () => {
-    menuPanel.classList.add("hidden");
+  // Общий сканер: openQrScanner(onDecode) открывает камеру и на первом же
+  // распознанном QR-коде вызывает onDecode(text); сам onDecode решает,
+  // остановить ли сканирование (stopQrScan()) или продолжить (вернуть false).
+  async function openQrScanner(onDecode, hintText) {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       alert("Этот браузер не поддерживает доступ к камере.");
       return;
@@ -984,7 +1013,8 @@
       alert("Библиотека сканирования QR не загрузилась.");
       return;
     }
-    qrScanStatus.textContent = "Наведите камеру на QR-код…";
+    qrScanOnDecode = onDecode;
+    qrScanStatus.textContent = hintText || "Наведите камеру на QR-код…";
     qrScanModal.classList.remove("hidden");
     try {
       qrScanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -993,6 +1023,288 @@
       qrScanRAF = requestAnimationFrame(qrScanTick);
     } catch (err) {
       qrScanStatus.textContent = "Не удалось получить доступ к камере: " + err.message;
+    }
+  }
+  document.getElementById("qrScanBtn").addEventListener("click", () => {
+    menuPanel.classList.add("hidden");
+    openQrScanner((data) => {
+      try {
+        importBackupPayload(JSON.parse(data));
+        qrScanStatus.textContent = "Готово — данные импортированы.";
+        stopQrScan();
+        alert("Данные импортированы.");
+      } catch (err) {
+        qrScanStatus.textContent = "Найден QR-код, но не удалось прочитать данные: " + err.message;
+        qrScanRAF = requestAnimationFrame(qrScanTick);
+      }
+    });
+  });
+
+  // ---------- постоянная синхронизация между устройствами (Firebase Realtime Database) ----------
+  function firebaseConfigured() {
+    return (
+      typeof firebase !== "undefined" &&
+      window.FIREBASE_CONFIG &&
+      typeof window.FIREBASE_CONFIG.apiKey === "string" &&
+      window.FIREBASE_CONFIG.apiKey.length > 0
+    );
+  }
+
+  function generateSyncCode() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, "");
+    let s = "";
+    for (let i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
+    return s;
+  }
+
+  // Формат сообщения синхронизации — отдельно от scheduleApp-backup-v2 (файл/разовый QR),
+  // потому что здесь нужен более умный merge: по каждой записи побеждает та, что новее
+  // (updatedAt), чтобы правки с двух устройств не затирали друг друга при регулярной работе.
+  function buildSyncPayload() {
+    return {
+      format: "scheduleApp-sync-v1",
+      updatedAt: Date.now(),
+      entries,
+      hiddenMeta,
+      weekOverrides,
+    };
+  }
+
+  function mergeRemoteBackup(remote) {
+    if (!remote || typeof remote !== "object") return false;
+    let changed = false;
+
+    const remoteEntries = remote.entries || {};
+    Object.keys(remoteEntries).forEach((id) => {
+      const r = remoteEntries[id];
+      const l = entries[id];
+      if (!l || (r.updatedAt || 0) > (l.updatedAt || 0)) {
+        entries[id] = r;
+        changed = true;
+      }
+    });
+
+    const remoteHiddenMeta = remote.hiddenMeta || {};
+    Object.keys(remoteHiddenMeta).forEach((id) => {
+      const r = remoteHiddenMeta[id];
+      const l = hiddenMeta[id];
+      if (!l || (r.updatedAt || 0) > (l.updatedAt || 0)) {
+        hiddenMeta[id] = r;
+        if (r.hidden) hiddenLessons.add(id);
+        else hiddenLessons.delete(id);
+        changed = true;
+      }
+    });
+
+    const remoteWeeks = remote.weekOverrides || {};
+    Object.keys(remoteWeeks).forEach((key) => {
+      const incoming = remoteWeeks[key];
+      const existing = getWeekEntry(key);
+      const cancelledSet = new Set([...(existing.cancelled || []), ...(incoming.cancelled || [])]);
+      const extraById = new Map();
+      [...(existing.extra || []), ...(incoming.extra || [])].forEach((ex) => extraById.set(ex.id, ex));
+      const mergedCancelled = Array.from(cancelledSet);
+      const mergedExtra = Array.from(extraById.values());
+      if (mergedCancelled.length !== (existing.cancelled || []).length || mergedExtra.length !== (existing.extra || []).length) {
+        changed = true;
+      }
+      weekOverrides[key] = { cancelled: mergedCancelled, extra: mergedExtra };
+    });
+
+    if (changed) {
+      // Пишем напрямую в localStorage, а не через save*() — те дёргают pushSyncPayload(),
+      // а входящие с сервера данные пересылать обратно немедленно не нужно (это не изменение
+      // пользователя); итоговое состояние всё равно досылается один раз ниже, в initSyncEngine.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify(Array.from(hiddenLessons)));
+      localStorage.setItem(HIDDEN_META_KEY, JSON.stringify(hiddenMeta));
+      localStorage.setItem(WEEK_OVERRIDES_KEY, JSON.stringify(weekOverrides));
+      renderLessons(activeDayIndex);
+      renderDayTabs();
+      renderHomeworkView();
+    }
+    return changed;
+  }
+
+  function pushSyncPayload() {
+    if (!syncDbRef || applyingRemoteSync) return;
+    clearTimeout(syncPushTimer);
+    syncPushTimer = setTimeout(() => {
+      syncDbRef
+        .set(buildSyncPayload())
+        .then(() => {
+          syncState = "synced";
+          syncErrorDetail = "";
+          renderSyncModal();
+        })
+        .catch((err) => {
+          syncState = "error";
+          syncErrorDetail = err.message;
+          renderSyncModal();
+        });
+    }, 700);
+  }
+
+  function initSyncEngine() {
+    if (!firebaseConfigured() || !syncCode) return;
+    if (!syncApp) {
+      try {
+        syncApp = firebase.apps && firebase.apps.length ? firebase.apps[0] : firebase.initializeApp(window.FIREBASE_CONFIG);
+      } catch (err) {
+        syncState = "error";
+        syncErrorDetail = err.message;
+        renderSyncModal();
+        return;
+      }
+    }
+    syncState = "connecting";
+    renderSyncModal();
+    if (syncDbRef) syncDbRef.off();
+    syncDbRef = firebase.database().ref(`sync/${syncCode}/payload`);
+    syncDbRef.on(
+      "value",
+      (snap) => {
+        applyingRemoteSync = true;
+        mergeRemoteBackup(snap.val());
+        applyingRemoteSync = false;
+        syncState = "synced";
+        syncErrorDetail = "";
+        renderSyncModal();
+        pushSyncPayload(); // добить сервер объединённым состоянием — безвредно, если ничего не изменилось
+      },
+      (err) => {
+        syncState = "error";
+        syncErrorDetail = err.message;
+        renderSyncModal();
+      }
+    );
+  }
+
+  function disconnectSync() {
+    if (syncDbRef) {
+      syncDbRef.off();
+      syncDbRef = null;
+    }
+    syncCode = null;
+    localStorage.removeItem(SYNC_CODE_KEY);
+    syncState = "idle";
+    renderSyncModal();
+  }
+
+  const syncModal = document.getElementById("syncModal");
+  const SYNC_STATE_LABEL = {
+    connecting: "Подключение…",
+    synced: "Синхронизировано",
+    error: "Ошибка синхронизации",
+    idle: "Не подключено",
+  };
+  function renderSyncModal() {
+    const label = document.querySelector(".sync-toggle-label");
+    const notConfigured = document.getElementById("syncNotConfigured");
+    const noPair = document.getElementById("syncNoPair");
+    const paired = document.getElementById("syncPaired");
+
+    if (!firebaseConfigured()) {
+      if (label) label.textContent = "Синхронизация: не настроена";
+      notConfigured.classList.remove("hidden");
+      noPair.classList.add("hidden");
+      paired.classList.add("hidden");
+      return;
+    }
+
+    if (!syncCode) {
+      if (label) label.textContent = "Настроить синхронизацию";
+      notConfigured.classList.add("hidden");
+      noPair.classList.remove("hidden");
+      paired.classList.add("hidden");
+      return;
+    }
+
+    notConfigured.classList.add("hidden");
+    noPair.classList.add("hidden");
+    paired.classList.remove("hidden");
+
+    const dot = document.getElementById("syncStatusDot");
+    const text = document.getElementById("syncStatusText");
+    dot.className = "sync-status-dot sync-status-dot--" + syncState;
+    text.textContent = syncState === "error" ? `Ошибка: ${syncErrorDetail}` : SYNC_STATE_LABEL[syncState] || syncState;
+    if (label) label.textContent = "Синхронизация: " + (syncState === "synced" ? "активна" : (SYNC_STATE_LABEL[syncState] || syncState).toLowerCase());
+
+    document.getElementById("syncCodeText").textContent = syncCode;
+    const wrap = document.getElementById("syncQrWrap");
+    if (wrap.dataset.renderedFor !== syncCode) {
+      wrap.innerHTML = "";
+      try {
+        const qr = qrcode(0, "L");
+        qr.addData(syncCode);
+        qr.make();
+        wrap.innerHTML = qr.createSvgTag({ cellSize: 5, margin: 4 });
+        wrap.dataset.renderedFor = syncCode;
+      } catch (err) {
+        wrap.innerHTML = "";
+      }
+    }
+  }
+
+  document.getElementById("syncBtn").addEventListener("click", () => {
+    menuPanel.classList.add("hidden");
+    renderSyncModal();
+    syncModal.classList.remove("hidden");
+  });
+  document.getElementById("syncCloseBtn").addEventListener("click", () => syncModal.classList.add("hidden"));
+  syncModal.addEventListener("click", (e) => {
+    if (e.target === syncModal) syncModal.classList.add("hidden");
+  });
+
+  document.getElementById("syncCreateBtn").addEventListener("click", () => {
+    syncCode = generateSyncCode();
+    localStorage.setItem(SYNC_CODE_KEY, syncCode);
+    initSyncEngine();
+    renderSyncModal();
+  });
+
+  function connectWithScannedCode(raw) {
+    const code = (raw || "").trim();
+    if (!/^[0-9a-fA-F]{16,64}$/.test(code)) return false;
+    syncCode = code;
+    localStorage.setItem(SYNC_CODE_KEY, syncCode);
+    initSyncEngine();
+    renderSyncModal();
+    return true;
+  }
+
+  document.getElementById("syncJoinScanBtn").addEventListener("click", () => {
+    openQrScanner((data) => {
+      if (connectWithScannedCode(data)) {
+        qrScanStatus.textContent = "Устройство подключено.";
+        stopQrScan();
+      } else {
+        qrScanStatus.textContent = "Это не похоже на код синхронизации — попробуйте ещё раз.";
+        qrScanRAF = requestAnimationFrame(qrScanTick);
+      }
+    }, "Наведите камеру на QR-код синхронизации с другого устройства");
+  });
+
+  const syncJoinManualForm = document.getElementById("syncJoinManualForm");
+  const syncJoinCodeInput = document.getElementById("syncJoinCodeInput");
+  document.getElementById("syncJoinManualBtn").addEventListener("click", () => {
+    syncJoinManualForm.classList.toggle("hidden");
+    if (!syncJoinManualForm.classList.contains("hidden")) syncJoinCodeInput.focus();
+  });
+  document.getElementById("syncJoinManualSubmit").addEventListener("click", () => {
+    const code = syncJoinCodeInput.value.trim();
+    if (!code) return;
+    syncCode = code;
+    localStorage.setItem(SYNC_CODE_KEY, syncCode);
+    initSyncEngine();
+    renderSyncModal();
+    syncJoinCodeInput.value = "";
+    syncJoinManualForm.classList.add("hidden");
+  });
+
+  document.getElementById("syncDisconnectBtn").addEventListener("click", () => {
+    if (confirm("Отключить синхронизацию на этом устройстве? Уже полученные данные останутся, но новые изменения не будут ни отправляться, ни приходить.")) {
+      disconnectSync();
     }
   });
 
@@ -1923,6 +2235,8 @@
   renderNotifyToggleBtn();
   checkAndNotifyDeadlines();
   checkAndNotifyUpcomingLesson();
+  renderSyncModal();
+  initSyncEngine();
 
   setInterval(() => {
     renderNowBanner();
