@@ -71,6 +71,22 @@ button, a, input, textarea, .lesson-card__head, .day-tab {
   touch-action: manipulation;
 }
 
+/* iOS standalone-режим (Добавить на экран «Домой»): status-bar-style
+   "black-translucent" рисует контент под чёлкой/статус-баром, а иконки
+   в нём всегда светлые — поэтому подкладываем фирменную плашку под сам
+   вырез, чтобы они были видны и в светлой, и в тёмной теме. На обычной
+   странице (без safe-area) высота этой плашки равна нулю — не мешает. */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top);
+  background: linear-gradient(135deg, #7c4dff, #b892ff);
+  z-index: 1000;
+}
+
 /* Рисованные SVG-иконки (спрайт в index.html) — вместо системных эмодзи */
 .icon {
   width: 17px;

@@ -1,4 +1,4 @@
-const CACHE_NAME = "schedule-app-v5";
+const CACHE_NAME = "schedule-app-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -10,6 +10,11 @@ const APP_SHELL = [
   "./icons/icon-512.png",
   "./icons/apple-touch-icon.png",
   "./icons/favicon.png",
+  "./icons/splash/splash-1125x2436.png",
+  "./icons/splash/splash-1170x2532.png",
+  "./icons/splash/splash-1179x2556.png",
+  "./icons/splash/splash-1284x2778.png",
+  "./icons/splash/splash-1290x2796.png",
 ];
 
 self.addEventListener("install", (event) => {
