@@ -13,11 +13,11 @@
 // Пока apiKey пустой — кнопка «Синхронизация» в меню сайта покажет,
 // что синхронизация не настроена, но весь остальной сайт работает как обычно.
 window.FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  databaseURL: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: "",
+  apiKey: "AIzaSyAheS0hesazWZoZcFts9LXEB2fquhp7imY",
+  authDomain: "dnevnik-701bd.firebaseapp.com",
+  databaseURL: "https://dnevnik-701bd-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "dnevnik-701bd",
+  storageBucket: "dnevnik-701bd.firebasestorage.app",
+  messagingSenderId: "213826007778",
+  appId: "1:213826007778:web:3e575756aaeb4c4ced64bb",
 };
