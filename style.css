@@ -408,6 +408,64 @@ body::before {
   opacity: 0.9;
 }
 
+.deadline-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin: 10px 0 14px;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.deadline-banner .icon {
+  flex-shrink: 0;
+}
+
+.deadline-banner span {
+  flex: 1;
+  min-width: 0;
+}
+
+.deadline-banner.is-soon {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.deadline-banner.is-overdue {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.deadline-banner__goto {
+  background: rgba(0,0,0,0.08);
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 32px;
+}
+
+[data-theme="dark"] .deadline-banner__goto {
+  background: rgba(255,255,255,0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .deadline-banner__goto {
+    background: rgba(255,255,255,0.12);
+  }
+}
+
+#notifyToggleBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .day-tabs {
   display: flex;
   gap: 8px;

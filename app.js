@@ -861,6 +861,7 @@
       });
       dayTabsEl.appendChild(btn);
     });
+    renderDeadlineBanner();
   }
 
   // ---------- now banner ----------
@@ -1317,12 +1318,7 @@
   }
   const DUE_LABEL = { overdue: "Просрочено", soon: "Скоро", normal: "" };
 
-  function renderHomeworkView() {
-    const list = document.getElementById("homeworkList");
-    const empty = document.getElementById("homeworkEmpty");
-    const countBadge = document.getElementById("hwCount");
-    list.innerHTML = "";
-
+  function collectHomeworkItems() {
     const items = [];
     SCHEDULE.days.forEach((day, dayIdx) => {
       Object.keys(day.pairs).map(Number).forEach((pair) => {
@@ -1350,6 +1346,16 @@
         });
       }
     });
+    return items;
+  }
+
+  function renderHomeworkView() {
+    const list = document.getElementById("homeworkList");
+    const empty = document.getElementById("homeworkEmpty");
+    const countBadge = document.getElementById("hwCount");
+    list.innerHTML = "";
+
+    const items = collectHomeworkItems();
 
     const pendingCount = items.filter((it) => !it.entry.done).length;
     if (pendingCount > 0) {
@@ -1450,14 +1456,137 @@
     });
   }
 
+  // ---------- deadline banner + notifications ----------
+  const NOTIFY_PREF_KEY = "scheduleApp:v1:notifyDeadlines";
+  const NOTIFIED_KEY = "scheduleApp:v1:notifiedDeadlines";
+
+  function notifyPrefEnabled() {
+    return localStorage.getItem(NOTIFY_PREF_KEY) === "1";
+  }
+  function loadNotified() {
+    try {
+      return JSON.parse(localStorage.getItem(NOTIFIED_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  }
+  function saveNotified(obj) {
+    localStorage.setItem(NOTIFIED_KEY, JSON.stringify(obj));
+  }
+
+  function computeDeadlineSummary() {
+    const items = collectHomeworkItems().filter((it) => !it.entry.done);
+    let overdue = 0;
+    let soon = 0;
+    items.forEach((it) => {
+      const urgency = dueDateUrgency(it.entry.dueDate);
+      if (urgency === "overdue") overdue++;
+      else if (urgency === "soon") soon++;
+    });
+    return { overdue, soon, items };
+  }
+
+  function renderDeadlineBanner() {
+    const banner = document.getElementById("deadlineBanner");
+    const { overdue, soon } = computeDeadlineSummary();
+    if (!overdue && !soon) {
+      banner.classList.add("hidden");
+      banner.innerHTML = "";
+      return;
+    }
+    const parts = [];
+    if (overdue) parts.push(`Просрочено: ${overdue}`);
+    if (soon) parts.push(`Горит: ${soon}`);
+    banner.className = "deadline-banner" + (overdue ? " is-overdue" : " is-soon");
+    banner.innerHTML =
+      svgIcon("bell") +
+      `<span>${parts.join(" · ")}</span>` +
+      `<button type="button" class="deadline-banner__goto">Домашние задания →</button>`;
+    banner.querySelector(".deadline-banner__goto").addEventListener("click", () => {
+      document.querySelector('.view-switch__btn[data-view="homework"]').click();
+    });
+  }
+
+  function renderNotifyToggleBtn() {
+    const btn = document.getElementById("notifyToggleBtn");
+    if (!btn) return;
+    const enabled = notifyPrefEnabled();
+    const supported = "Notification" in window && "serviceWorker" in navigator;
+    btn.querySelector("use").setAttribute("href", enabled ? "#icon-bell" : "#icon-bell-off");
+    btn.querySelector(".notify-toggle-label").textContent = enabled
+      ? "Уведомления о дедлайнах: включены"
+      : "Уведомления о дедлайнах: выключены";
+    btn.disabled = !supported;
+    if (!supported) btn.querySelector(".notify-toggle-label").textContent = "Уведомления не поддерживаются браузером";
+  }
+
+  function checkAndNotifyDeadlines() {
+    if (!notifyPrefEnabled()) return;
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    if (!("serviceWorker" in navigator)) return;
+
+    const notified = loadNotified();
+    const { items } = computeDeadlineSummary();
+    let changed = false;
+
+    items.forEach((it) => {
+      const urgency = dueDateUrgency(it.entry.dueDate);
+      if (urgency !== "overdue" && urgency !== "soon") return;
+      if (notified[it.id] === urgency) return;
+      notified[it.id] = urgency;
+      changed = true;
+      const title = urgency === "overdue" ? "Дедлайн просрочен" : "Дедлайн скоро горит";
+      const body = `${sectionLabel(it.section)} — «${it.entry.hw.trim().slice(0, 80)}», сдать до ${formatDueDate(it.entry.dueDate)}`;
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.showNotification(title, {
+          body,
+          icon: "icons/icon-192.png",
+          badge: "icons/icon-192.png",
+          tag: it.id,
+        });
+      });
+    });
+
+    if (changed) saveNotified(notified);
+  }
+
+  const notifyToggleBtn = document.getElementById("notifyToggleBtn");
+  if (notifyToggleBtn) {
+    notifyToggleBtn.addEventListener("click", () => {
+      if (!("Notification" in window)) {
+        alert("Этот браузер не поддерживает уведомления.");
+        return;
+      }
+      if (!notifyPrefEnabled()) {
+        Notification.requestPermission().then((perm) => {
+          if (perm === "granted") {
+            localStorage.setItem(NOTIFY_PREF_KEY, "1");
+            renderNotifyToggleBtn();
+            checkAndNotifyDeadlines();
+          } else if (perm === "denied") {
+            alert("Уведомления заблокированы в настройках браузера — разрешите их для этого сайта, чтобы включить.");
+          }
+        });
+      } else {
+        localStorage.setItem(NOTIFY_PREF_KEY, "0");
+        renderNotifyToggleBtn();
+      }
+    });
+  }
+
   // ---------- init ----------
   renderDayTabs();
   renderLessons(activeDayIndex);
   renderHomeworkView();
   updateRecCountBadge();
+  renderDeadlineBanner();
+  renderNotifyToggleBtn();
+  checkAndNotifyDeadlines();
 
   setInterval(() => {
     renderNowBanner();
     if (!manualParity) renderParityBtn();
+    renderDeadlineBanner();
+    checkAndNotifyDeadlines();
   }, 60 * 1000);
 })();
