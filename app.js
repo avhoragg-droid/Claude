@@ -843,6 +843,7 @@
       menuPanel.classList.add("hidden");
     }
   });
+  document.getElementById("menuCloseBtn").addEventListener("click", () => menuPanel.classList.add("hidden"));
 
   document.getElementById("switchGroupBtn").addEventListener("click", () => {
     menuPanel.classList.add("hidden");
@@ -1483,7 +1484,14 @@
       btn.className = "day-tab";
       if (idx === activeDayIndex) btn.classList.add("is-active");
       if (idx === today) btn.classList.add("is-today");
-      btn.textContent = DAY_SHORT[idx];
+      const nameEl = document.createElement("span");
+      nameEl.className = "day-tab__name";
+      nameEl.textContent = DAY_SHORT[idx];
+      const dateEl = document.createElement("span");
+      dateEl.className = "day-tab__date";
+      dateEl.textContent = ddmm(calendarDateForDay(idx));
+      btn.appendChild(nameEl);
+      btn.appendChild(dateEl);
       btn.title = day.name;
       if (dayHasPendingHomework(idx)) {
         const dot = document.createElement("span");

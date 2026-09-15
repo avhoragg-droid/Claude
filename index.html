@@ -195,21 +195,43 @@
 
     <section id="deadlineBanner" class="deadline-banner hidden"></section>
 
+    <div id="menuBackdrop" class="menu-backdrop"></div>
     <div id="menuPanel" class="menu-panel hidden">
-      <button id="switchGroupBtn"><svg class="icon"><use href="#icon-swap"/></svg> Сменить группу</button>
-      <button id="installBtn" class="hidden"><svg class="icon"><use href="#icon-install"/></svg> Установить на главный экран</button>
-      <button id="notifyToggleBtn"><svg class="icon"><use href="#icon-bell"/></svg> <span class="notify-toggle-label">Уведомления о дедлайнах</span></button>
-      <button id="syncBtn"><svg class="icon"><use href="#icon-sync"/></svg> <span class="sync-toggle-label">Синхронизация</span></button>
-      <button id="statsBtn"><svg class="icon"><use href="#icon-sparkle"/></svg> Статистика</button>
-      <button id="icsExportBtn"><svg class="icon"><use href="#icon-calendar"/></svg> Дедлайны в календарь (.ics)</button>
-      <button id="qrShowBtn"><svg class="icon"><use href="#icon-download"/></svg> Показать QR-код (перенос данных)</button>
-      <button id="qrScanBtn"><svg class="icon"><use href="#icon-upload"/></svg> Сканировать QR-код (импорт)</button>
-      <button id="exportBtn"><svg class="icon"><use href="#icon-download"/></svg> Экспорт (перенос на другое устройство)</button>
-      <label class="import-label">
-        <svg class="icon"><use href="#icon-upload"/></svg> Импорт (с другого устройства)
-        <input type="file" id="importInput" accept="application/json" hidden />
-      </label>
-      <button id="clearBtn" class="danger"><svg class="icon"><use href="#icon-trash"/></svg> Очистить все заметки</button>
+      <div class="menu-sheet-handle"></div>
+      <button type="button" id="menuCloseBtn" class="menu-sheet-close"><svg class="icon"><use href="#icon-x"/></svg></button>
+
+      <div class="menu-section">
+        <p class="menu-section__label">Группа</p>
+        <button id="switchGroupBtn"><svg class="icon"><use href="#icon-swap"/></svg> Сменить группу</button>
+        <button id="installBtn" class="hidden"><svg class="icon"><use href="#icon-install"/></svg> Установить на главный экран</button>
+      </div>
+
+      <div class="menu-section">
+        <p class="menu-section__label">Уведомления и синхронизация</p>
+        <button id="notifyToggleBtn"><svg class="icon"><use href="#icon-bell"/></svg> <span class="notify-toggle-label">Уведомления о дедлайнах</span></button>
+        <button id="syncBtn"><svg class="icon"><use href="#icon-sync"/></svg> <span class="sync-toggle-label">Синхронизация</span></button>
+      </div>
+
+      <div class="menu-section">
+        <p class="menu-section__label">Данные</p>
+        <button id="statsBtn"><svg class="icon"><use href="#icon-sparkle"/></svg> Статистика</button>
+        <button id="icsExportBtn"><svg class="icon"><use href="#icon-calendar"/></svg> Дедлайны в календарь (.ics)</button>
+      </div>
+
+      <div class="menu-section">
+        <p class="menu-section__label">Перенос данных</p>
+        <button id="qrShowBtn"><svg class="icon"><use href="#icon-download"/></svg> Показать QR-код (перенос данных)</button>
+        <button id="qrScanBtn"><svg class="icon"><use href="#icon-upload"/></svg> Сканировать QR-код (импорт)</button>
+        <button id="exportBtn"><svg class="icon"><use href="#icon-download"/></svg> Экспорт (перенос на другое устройство)</button>
+        <label class="import-label">
+          <svg class="icon"><use href="#icon-upload"/></svg> Импорт (с другого устройства)
+          <input type="file" id="importInput" accept="application/json" hidden />
+        </label>
+      </div>
+
+      <div class="menu-section">
+        <button id="clearBtn" class="danger"><svg class="icon"><use href="#icon-trash"/></svg> Очистить все заметки</button>
+      </div>
     </div>
 
     <div id="statsModal" class="modal-overlay hidden">

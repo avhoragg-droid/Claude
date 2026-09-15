@@ -307,6 +307,22 @@ body::before {
 
 .icon-btn:active, .chip-btn:active { transform: scale(0.94); }
 
+.menu-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 9;
+}
+
+.app:has(#menuPanel:not(.hidden)) .menu-backdrop {
+  display: block;
+}
+
+@media (min-width: 640px) {
+  .menu-backdrop { display: none !important; }
+}
+
 .menu-panel {
   position: absolute;
   right: 16px;
@@ -317,9 +333,34 @@ body::before {
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   z-index: 10;
-  width: 240px;
+  width: 260px;
+  max-height: 80vh;
+}
+
+.menu-sheet-handle, .menu-sheet-close {
+  display: none;
+}
+
+.menu-section {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 0;
+}
+
+.menu-section:last-child {
+  border-bottom: none;
+}
+
+.menu-section__label {
+  margin: 6px 16px 2px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
 }
 
 .menu-panel button, .menu-panel .import-label {
@@ -333,6 +374,8 @@ body::before {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 44px;
+  box-sizing: border-box;
 }
 
 .menu-panel button:hover, .menu-panel .import-label:hover {
@@ -340,6 +383,61 @@ body::before {
 }
 
 .menu-panel .danger { color: var(--danger); }
+
+@media (max-width: 639px) {
+  .menu-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    margin-top: 0;
+    width: auto;
+    max-height: 82vh;
+    border-radius: 18px 18px 0 0;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    animation: menu-sheet-in 0.22s ease-out;
+  }
+
+  .menu-sheet-handle {
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border);
+    margin: 10px auto 2px;
+    flex-shrink: 0;
+  }
+
+  .menu-sheet-close {
+    display: flex;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 36px;
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+
+  .menu-panel button, .menu-panel .import-label {
+    padding: 13px 16px;
+    font-size: 0.95rem;
+  }
+}
+
+@keyframes menu-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-panel { animation: none; }
+}
 
 .modal-overlay {
   position: fixed;
@@ -737,18 +835,33 @@ body::before {
 .day-tab {
   flex: 0 0 auto;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  min-height: 42px;
+  justify-content: center;
+  gap: 1px;
+  min-height: 48px;
+  min-width: 46px;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   color: var(--text);
-  padding: 10px 14px;
+  padding: 7px 12px;
   border-radius: 12px;
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   position: relative;
   white-space: nowrap;
+}
+
+.day-tab__name {
+  line-height: 1.2;
+}
+
+.day-tab__date {
+  font-size: 0.68rem;
+  font-weight: 500;
+  opacity: 0.65;
+  line-height: 1.2;
 }
 
 .day-tab.is-today { border-color: var(--accent); }
@@ -758,6 +871,8 @@ body::before {
   color: var(--accent-contrast);
   border-color: var(--accent);
 }
+
+.day-tab.is-active .day-tab__date { opacity: 0.85; }
 
 .day-tab__dot {
   position: absolute;
