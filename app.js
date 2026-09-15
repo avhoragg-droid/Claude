@@ -1231,6 +1231,37 @@
     }, 700);
   }
 
+  // Немедленная (без debounce) отправка — нужна перед уходом со страницы, когда
+  // обычные 700мс можно не успеть: мобильный браузер может придушить таймер сразу
+  // после блокировки экрана/переключения приложений.
+  function flushSyncNow() {
+    if (!syncDbRef || applyingRemoteSync) return;
+    clearTimeout(syncPushTimer);
+    syncDbRef.set(buildSyncPayload()).catch(() => {});
+  }
+  // Разовое подтягивание текущего состояния с сервера — подстраховка на случай,
+  // если realtime-соединение молча оборвалось (сон вкладки, смена сети) и обычный
+  // .on("value") пропустил чьё-то чужое обновление, пока это устройство было неактивно.
+  function refetchSyncNow() {
+    if (!syncDbRef) return;
+    syncDbRef.once("value", (snap) => {
+      applyingRemoteSync = true;
+      mergeRemoteBackup(snap.val());
+      applyingRemoteSync = false;
+    });
+  }
+  let syncLifecycleHooksAttached = false;
+  function attachSyncLifecycleHooks() {
+    if (syncLifecycleHooksAttached) return;
+    syncLifecycleHooksAttached = true;
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) flushSyncNow();
+      else refetchSyncNow();
+    });
+    window.addEventListener("pagehide", flushSyncNow);
+  }
+  let connectedStateWatcherAttached = false;
+
   function initSyncEngine() {
     if (!firebaseConfigured() || !syncCode) return;
     if (!syncApp) {
@@ -1264,6 +1295,19 @@
         renderSyncModal();
       }
     );
+    attachSyncLifecycleHooks();
+    // .info/connected — служебный путь Firebase, который переключается в true при каждом
+    // (пере)подключении сокета. Слушаем один раз на всё приложение: после восстановления
+    // соединения (после сна вкладки, смены Wi-Fi/мобильной сети и т.п.) досинхронизируемся.
+    if (!connectedStateWatcherAttached) {
+      connectedStateWatcherAttached = true;
+      firebase
+        .database()
+        .ref(".info/connected")
+        .on("value", (snap) => {
+          if (snap.val() === true) refetchSyncNow();
+        });
+    }
   }
 
   function disconnectSync() {
@@ -1392,6 +1436,18 @@
     if (confirm("Отключить синхронизацию на этом устройстве? Уже полученные данные останутся, но новые изменения не будут ни отправляться, ни приходить.")) {
       disconnectSync();
     }
+  });
+
+  document.getElementById("syncNowBtn").addEventListener("click", () => {
+    if (!syncDbRef) return;
+    syncState = "connecting";
+    renderSyncModal();
+    refetchSyncNow();
+    flushSyncNow();
+    setTimeout(() => {
+      syncState = "synced";
+      renderSyncModal();
+    }, 400);
   });
 
   // ---------- header ----------
